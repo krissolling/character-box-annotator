@@ -95,13 +95,11 @@ export default function MainAnnotator() {
         </div>
 
         {/* Right column: Sidebar with control panels */}
-        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <CharacterPicker />
-            <BaselineControls />
-            <EditedCharacters />
-            <FilterControls />
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, gap: '15px' }}>
+          <CharacterPicker />
+          <BaselineControls />
+          <EditedCharacters />
+          <FilterControls />
         </div>
       </div>
 
