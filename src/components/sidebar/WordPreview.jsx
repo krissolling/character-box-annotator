@@ -7,10 +7,15 @@ export default function WordPreview() {
   const canvasRef = useRef(null);
   const canvasContainerRef = useRef(null);
   const charPositionsRef = useRef([]); // Store character bounding boxes for click detection
+  const kerningHandlesRef = useRef([]); // Store kerning handle positions
   const rotatedImageRef = useRef(null); // Cache rotated image
   const [eyedropperActive, setEyedropperActive] = useState(false);
   const [debugClickAreas, setDebugClickAreas] = useState(false);
   const [lastClickPos, setLastClickPos] = useState(null);
+  const [draggingKerningIndex, setDraggingKerningIndex] = useState(null);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [dragStartKerning, setDragStartKerning] = useState(0);
+  const [handleRenderTrigger, setHandleRenderTrigger] = useState(0);
 
   const image = useAnnotatorStore((state) => state.image);
   const boxes = useAnnotatorStore((state) => state.boxes);
@@ -26,6 +31,7 @@ export default function WordPreview() {
   const imageFilters = useAnnotatorStore((state) => state.imageFilters);
   const levelsAdjustment = useAnnotatorStore((state) => state.levelsAdjustment);
   const updateFilter = useAnnotatorStore((state) => state.updateFilter);
+  const updateKerning = useAnnotatorStore((state) => state.updateKerning);
   const imageFile = useAnnotatorStore((state) => state.imageFile);
 
   const handleDownload = () => {
@@ -275,6 +281,59 @@ export default function WordPreview() {
     }
   };
 
+  // Kerning handle drag handlers
+  const handleKerningMouseDown = (e, index) => {
+    e.stopPropagation();
+    setDraggingKerningIndex(index);
+    setDragStartX(e.clientX);
+    setDragStartKerning(kerningAdjustments[index] || 0);
+  };
+
+  const handleKerningMouseMove = (e) => {
+    if (draggingKerningIndex === null) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const naturalWidth = parseFloat(canvas.dataset.naturalWidth || canvas.width);
+    const naturalHeight = parseFloat(canvas.dataset.naturalHeight || canvas.height);
+
+    // Calculate scale factor accounting for letterboxing
+    const canvasAspect = naturalWidth / naturalHeight;
+    const rectAspect = rect.width / rect.height;
+    let renderedWidth;
+
+    if (canvasAspect > rectAspect) {
+      renderedWidth = rect.width;
+    } else {
+      renderedWidth = rect.height * canvasAspect;
+    }
+
+    const scale = naturalWidth / renderedWidth;
+    const deltaX = e.clientX - dragStartX;
+    const deltaXInCanvasUnits = deltaX * scale;
+    const newKerning = Math.round(dragStartKerning + deltaXInCanvasUnits);
+
+    updateKerning(draggingKerningIndex, newKerning);
+  };
+
+  const handleKerningMouseUp = () => {
+    setDraggingKerningIndex(null);
+  };
+
+  // Add global mouse event listeners for kerning drag
+  useEffect(() => {
+    if (draggingKerningIndex !== null) {
+      window.addEventListener('mousemove', handleKerningMouseMove);
+      window.addEventListener('mouseup', handleKerningMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleKerningMouseMove);
+        window.removeEventListener('mouseup', handleKerningMouseUp);
+      };
+    }
+  }, [draggingKerningIndex, dragStartX, dragStartKerning, kerningAdjustments]);
+
   // Handle eyedropper cursor elements
   useEffect(() => {
     if (eyedropperActive) {
@@ -380,6 +439,8 @@ export default function WordPreview() {
 
     // Render canvas (no need to wait for image loading since we apply masks dynamically)
     renderCanvas();
+    // Trigger re-render of kerning handles after canvas is rendered
+    setHandleRenderTrigger(prev => prev + 1);
   }, [image, boxes, letterSpacing, charPadding, kerningAdjustments, baselines, angledBaselines, editedCharData, imageRotation, imageFilters, levelsAdjustment, debugClickAreas, lastClickPos]);
 
   // Apply advanced color adjustments (shadows/highlights) to canvas
@@ -445,6 +506,8 @@ export default function WordPreview() {
 
     // Clear character positions for click detection
     charPositionsRef.current = [];
+    // Clear kerning handle positions
+    kerningHandlesRef.current = [];
 
     // Check if there are any angled baselines
     const angledBaseline = angledBaselines && angledBaselines.length > 0 ? angledBaselines[0] : null;
@@ -688,6 +751,22 @@ export default function WordPreview() {
           height: boxHeight,
           box: box
         });
+
+        // Store kerning handle position (for all except first character)
+        // Handle should be at the left edge of current character (before it's drawn)
+        if (index > 0) {
+          // Calculate handle position at the gap between previous and current character
+          // This is where we are now, before drawing the current character
+          const prevCharRightEdge = currentX - letterSpacing - (kerningAdjustments[index - 1] || 0);
+          const handleX = prevCharRightEdge + (letterSpacing / 2) + ((kerningAdjustments[index - 1] || 0) / 2);
+
+          kerningHandlesRef.current.push({
+            index: index - 1, // Kerning adjustment index (between prev and current char)
+            x: handleX,
+            y: yPos + boxHeight + 5, // Position below the character
+            canvasHeight: canvasHeight
+          });
+        }
       } catch (error) {
         console.error('Error drawing character:', error);
       }
@@ -921,6 +1000,66 @@ export default function WordPreview() {
             objectFit: 'contain'
           }}
         />
+        {/* Kerning adjustment handles */}
+        {kerningHandlesRef.current.map((handle, i) => {
+          const canvas = canvasRef.current;
+          if (!canvas) return null;
+
+          const rect = canvas.getBoundingClientRect();
+          const naturalWidth = parseFloat(canvas.dataset.naturalWidth || canvas.width);
+          const naturalHeight = parseFloat(canvas.dataset.naturalHeight || canvas.height);
+
+          // Calculate letterboxing offset and scale
+          const canvasAspect = naturalWidth / naturalHeight;
+          const rectAspect = rect.width / rect.height;
+
+          let renderedWidth, renderedHeight, offsetX, offsetY;
+
+          if (canvasAspect > rectAspect) {
+            renderedWidth = rect.width;
+            renderedHeight = rect.width / canvasAspect;
+            offsetX = 0;
+            offsetY = (rect.height - renderedHeight) / 2;
+          } else {
+            renderedWidth = rect.height * canvasAspect;
+            renderedHeight = rect.height;
+            offsetX = (rect.width - renderedWidth) / 2;
+            offsetY = 0;
+          }
+
+          const scaleX = renderedWidth / naturalWidth;
+          const scaleY = renderedHeight / naturalHeight;
+
+          // Convert handle position to display coordinates
+          const displayX = handle.x * scaleX + offsetX;
+          const displayY = handle.y * scaleY + offsetY;
+
+          const isDragging = draggingKerningIndex === handle.index;
+
+          return (
+            <div
+              key={`kerning-handle-${handle.index}`}
+              onMouseDown={(e) => handleKerningMouseDown(e, handle.index)}
+              style={{
+                position: 'absolute',
+                left: `${displayX}px`,
+                top: `${displayY}px`,
+                width: '12px',
+                height: '20px',
+                background: isDragging ? '#2196F3' : '#FF9800',
+                border: '2px solid white',
+                borderRadius: '3px',
+                cursor: 'ew-resize',
+                transform: 'translateX(-50%)',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                transition: isDragging ? 'none' : 'background 0.2s',
+                zIndex: 10,
+                pointerEvents: 'auto'
+              }}
+              title={`Adjust kerning (current: ${kerningAdjustments[handle.index] || 0}px)`}
+            />
+          );
+        })}
       </div>
     </div>
   );
