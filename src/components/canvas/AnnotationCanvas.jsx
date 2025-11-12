@@ -550,20 +550,39 @@ export default function AnnotationCanvas() {
 
       // Draw all saved angled baselines
       angledBaselines.forEach((baseline) => {
+        // Calculate angle and extend line infinitely across canvas
+        const angleRad = baseline.angle * (Math.PI / 180);
+        const centerX = (baseline.start.x + baseline.end.x) / 2;
+        const centerY = (baseline.start.y + baseline.end.y) / 2;
+
+        // Extend line to cover entire canvas (2000px should be enough)
+        const lineLength = 2000;
+        const halfLength = lineLength / 2;
+
+        const extendedStart = {
+          x: centerX - Math.cos(angleRad) * halfLength,
+          y: centerY - Math.sin(angleRad) * halfLength,
+        };
+
+        const extendedEnd = {
+          x: centerX + Math.cos(angleRad) * halfLength,
+          y: centerY + Math.sin(angleRad) * halfLength,
+        };
+
         ctx.strokeStyle = baseline.color;
         ctx.lineWidth = 2;
         ctx.setLineDash([10, 5]);
         ctx.beginPath();
-        ctx.moveTo(baseline.start.x * zoomLevel, baseline.start.y * zoomLevel);
-        ctx.lineTo(baseline.end.x * zoomLevel, baseline.end.y * zoomLevel);
+        ctx.moveTo(extendedStart.x * zoomLevel, extendedStart.y * zoomLevel);
+        ctx.lineTo(extendedEnd.x * zoomLevel, extendedEnd.y * zoomLevel);
         ctx.stroke();
         ctx.setLineDash([]);
 
         // Draw baseline label
         ctx.fillStyle = baseline.color;
         ctx.font = `bold 12px Arial`;
-        const midX = ((baseline.start.x + baseline.end.x) / 2) * zoomLevel;
-        const midY = ((baseline.start.y + baseline.end.y) / 2) * zoomLevel;
+        const midX = centerX * zoomLevel;
+        const midY = centerY * zoomLevel;
         ctx.fillText(`Angled ${baseline.id} (${baseline.angle.toFixed(1)}°)`, midX + 5, midY - 5);
       });
 
