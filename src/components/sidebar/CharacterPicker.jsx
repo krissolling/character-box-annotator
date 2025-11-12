@@ -10,6 +10,7 @@ export default function CharacterPicker() {
   const selectedBox = useAnnotatorStore((state) => state.selectedBox);
   const deleteBox = useAnnotatorStore((state) => state.deleteBox);
   const setSelectedBox = useAnnotatorStore((state) => state.setSelectedBox);
+  const setCurrentTool = useAnnotatorStore((state) => state.setCurrentTool);
 
   if (uniqueChars.length === 0) return null;
 
@@ -139,7 +140,10 @@ export default function CharacterPicker() {
           return (
             <div
               key={index}
-              onClick={() => setCurrentCharIndex(index)}
+              onClick={() => {
+                setCurrentCharIndex(index);
+                setCurrentTool('box'); // Auto-switch to box tool
+              }}
               style={{
                 padding: '10px',
                 marginBottom: '8px',

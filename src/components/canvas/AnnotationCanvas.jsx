@@ -889,6 +889,8 @@ export default function AnnotationCanvas() {
           setSelectedBox(i); // Select the box
           setIsDraggingBox(true);
           setDragStart(pos, { ...box });
+          // Auto-switch to box tool after clicking on a box
+          useAnnotatorStore.getState().setCurrentTool('box');
           return;
         }
       }
