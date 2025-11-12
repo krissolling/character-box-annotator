@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, RotateCcw } from 'lucide-react';
+import { X, Save, RotateCcw, Trash2 } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 
 export default function CharacterEditModal() {
@@ -432,6 +432,32 @@ export default function CharacterEditModal() {
     }
   };
 
+  const handleDeleteMask = () => {
+    if (editingBoxIndex === null) return;
+
+    // Confirm deletion
+    if (!confirm('Delete all mask data for this character? The bounding box will be preserved.')) {
+      return;
+    }
+
+    // Remove editedCharData for this box
+    const newEditedCharData = { ...editedCharData };
+    delete newEditedCharData[editingBoxIndex];
+    useAnnotatorStore.getState().setEditedCharData(newEditedCharData);
+
+    // Clear brushMask from the box if it exists
+    if (box.brushMask) {
+      const updatedBox = { ...box };
+      delete updatedBox.brushMask;
+      const newBoxes = [...boxes];
+      newBoxes[editingBoxIndex] = updatedBox;
+      useAnnotatorStore.getState().setBoxes(newBoxes);
+    }
+
+    // Close the modal
+    closeCharacterEdit();
+  };
+
   const handleSave = () => {
     if (!canvasRef.current || !hasChanges) {
       closeCharacterEdit();
@@ -650,47 +676,76 @@ export default function CharacterEditModal() {
           padding: '16px',
           borderTop: '1px solid #ddd',
           display: 'flex',
-          justifyContent: 'flex-end',
+          justifyContent: 'space-between',
           gap: '8px'
         }}>
-          <button
-            onClick={closeCharacterEdit}
-            style={{
-              padding: '8px 24px',
-              background: '#e5e7eb',
-              color: '#374151',
-              border: 'none',
-              borderRadius: '6px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'background 0.2s'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.background = '#d1d5db'}
-            onMouseOut={(e) => e.currentTarget.style.background = '#e5e7eb'}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            style={{
-              padding: '8px 24px',
-              background: '#10b981',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'background 0.2s',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
-            onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
-          >
-            <Save style={{ width: '16px', height: '16px' }} />
-            {hasChanges ? 'Save Changes' : 'Close'}
-          </button>
+          {/* Delete Mask button on the left */}
+          {(box.brushMask || editedCharData[editingBoxIndex]) && (
+            <button
+              onClick={handleDeleteMask}
+              style={{
+                padding: '8px 24px',
+                background: '#ef4444',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.background = '#dc2626'}
+              onMouseOut={(e) => e.currentTarget.style.background = '#ef4444'}
+              title="Delete all mask data (brush and erase masks) for this character"
+            >
+              <Trash2 style={{ width: '16px', height: '16px' }} />
+              Delete Mask
+            </button>
+          )}
+
+          {/* Right-side buttons */}
+          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+            <button
+              onClick={closeCharacterEdit}
+              style={{
+                padding: '8px 24px',
+                background: '#e5e7eb',
+                color: '#374151',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'background 0.2s'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.background = '#d1d5db'}
+              onMouseOut={(e) => e.currentTarget.style.background = '#e5e7eb'}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              style={{
+                padding: '8px 24px',
+                background: '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
+              onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
+            >
+              <Save style={{ width: '16px', height: '16px' }} />
+              {hasChanges ? 'Save Changes' : 'Close'}
+            </button>
+          </div>
         </div>
       </div>
     </div>,
