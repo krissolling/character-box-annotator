@@ -345,6 +345,31 @@ export default function AnnotationCanvas() {
           ctx.lineWidth = 1;
           ctx.strokeRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
         });
+
+        // Draw edge handles (midpoint of each side)
+        const edgeHandleWidth = 20;
+        const edgeHandleHeight = 6;
+        const edges = [
+          { x: (box.x + box.width / 2) * zoomLevel, y: box.y * zoomLevel, type: 'horizontal' }, // top
+          { x: (box.x + box.width / 2) * zoomLevel, y: (box.y + box.height) * zoomLevel, type: 'horizontal' }, // bottom
+          { x: box.x * zoomLevel, y: (box.y + box.height / 2) * zoomLevel, type: 'vertical' }, // left
+          { x: (box.x + box.width) * zoomLevel, y: (box.y + box.height / 2) * zoomLevel, type: 'vertical' }, // right
+        ];
+
+        edges.forEach(edge => {
+          ctx.fillStyle = isSelected ? '#2196F3' : '#FF9800';
+          if (edge.type === 'horizontal') {
+            ctx.fillRect(edge.x - edgeHandleWidth / 2, edge.y - edgeHandleHeight / 2, edgeHandleWidth, edgeHandleHeight);
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(edge.x - edgeHandleWidth / 2, edge.y - edgeHandleHeight / 2, edgeHandleWidth, edgeHandleHeight);
+          } else {
+            ctx.fillRect(edge.x - edgeHandleHeight / 2, edge.y - edgeHandleWidth / 2, edgeHandleHeight, edgeHandleWidth);
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(edge.x - edgeHandleHeight / 2, edge.y - edgeHandleWidth / 2, edgeHandleHeight, edgeHandleWidth);
+          }
+        });
       }
     });
 
