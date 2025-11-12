@@ -435,8 +435,13 @@ export default function WordPreview() {
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
 
-    // Sort boxes by x position (left to right)
-    const sortedBoxes = [...boxes].sort((a, b) => a.x - b.x);
+    // Instead of using boxes directly, create an array of boxes based on the text string
+    // This allows us to show "HELLO" with two L's instead of just "HELO"
+    const textChars = text.split('');
+    const displayBoxes = textChars.map(char => {
+      // Find the box for this character
+      return boxes.find(box => box.char === char);
+    }).filter(box => box !== undefined); // Filter out characters that don't have boxes yet
 
     // Clear character positions for click detection
     charPositionsRef.current = [];
@@ -449,19 +454,19 @@ export default function WordPreview() {
     const baselineSlope = Math.tan(baselineAngleRad);
 
     // Find boxes with baseline alignment
-    const baselinedBoxes = sortedBoxes.filter(box => box.baseline_offset !== undefined);
+    const baselinedBoxes = displayBoxes.filter(box => box.baseline_offset !== undefined);
 
     // Calculate total width and max height
     let totalWidth = 0;
     let maxHeight = 0;
     let unifiedBaselineY = 0;
 
-    sortedBoxes.forEach((box, index) => {
+    displayBoxes.forEach((box, index) => {
       const boxWidth = box.width + charPadding * 2;
       const boxHeight = box.height + charPadding * 2;
 
       totalWidth += boxWidth;
-      if (index < sortedBoxes.length - 1) {
+      if (index < displayBoxes.length - 1) {
         totalWidth += letterSpacing;
         // Add per-pair kerning
         const kerning = kerningAdjustments[index] || 0;
@@ -548,7 +553,7 @@ export default function WordPreview() {
     // Draw each character crop
     let currentX = canvasPadding;
 
-    sortedBoxes.forEach((box, index) => {
+    displayBoxes.forEach((box, index) => {
       const boxWidth = box.width + charPadding * 2;
       const boxHeight = box.height + charPadding * 2;
 
@@ -682,7 +687,7 @@ export default function WordPreview() {
       currentX += boxWidth + letterSpacing;
 
       // Add per-pair kerning
-      if (index < sortedBoxes.length - 1) {
+      if (index < displayBoxes.length - 1) {
         const kerning = kerningAdjustments[index] || 0;
         currentX += kerning;
       }

@@ -12,12 +12,12 @@ export default function SetupPanel() {
   const reset = useAnnotatorStore((state) => state.reset);
   const [showTextInput, setShowTextInput] = useState(false);
 
-  // Auto-start annotating when image is uploaded and text exists
+  // Auto-start annotating when image is uploaded (even without text)
   useEffect(() => {
-    if (image && text && !isAnnotating) {
+    if (image && !isAnnotating) {
       setIsAnnotating(true);
     }
-  }, [image, text, isAnnotating, setIsAnnotating]);
+  }, [image, isAnnotating, setIsAnnotating]);
 
   const handleStart = () => {
     if (image && text) {
@@ -32,8 +32,28 @@ export default function SetupPanel() {
   };
 
   const handleEditString = () => {
-    if (confirm('Edit string? This will stop annotation and clear all boxes.')) {
-      setIsAnnotating(false);
+    const currentText = text || '';
+    const newText = prompt('Edit the string to annotate:', currentText);
+
+    if (newText !== null && newText !== currentText) {
+      // User confirmed and text changed
+      if (newText.trim() === '') {
+        alert('String cannot be empty');
+        return;
+      }
+
+      // Warn if there are existing boxes and text is changing
+      const boxes = useAnnotatorStore.getState().boxes;
+      if (boxes.length > 0) {
+        if (!confirm('Changing the string will clear all existing boxes. Continue?')) {
+          return;
+        }
+        // Clear boxes
+        useAnnotatorStore.getState().setBoxes([]);
+      }
+
+      // Update text
+      useAnnotatorStore.getState().setText(newText);
     }
   };
 

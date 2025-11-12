@@ -20,10 +20,27 @@ export default function CharacterPicker() {
   });
 
   const handleEditString = () => {
-    const newText = prompt('Enter text to annotate:', text);
-    if (newText && newText.trim()) {
-      // This would reset the annotation - for now just alert
-      alert('Edit String functionality will be implemented');
+    const currentText = text || '';
+    const newText = prompt('Edit the string to annotate:', currentText);
+
+    if (newText !== null && newText !== currentText) {
+      // User confirmed and text changed
+      if (newText.trim() === '') {
+        alert('String cannot be empty');
+        return;
+      }
+
+      // Warn if there are existing boxes and text is changing
+      if (boxes.length > 0) {
+        if (!confirm('Changing the string will clear all existing boxes. Continue?')) {
+          return;
+        }
+        // Clear boxes
+        useAnnotatorStore.getState().setBoxes([]);
+      }
+
+      // Update text
+      useAnnotatorStore.getState().setText(newText);
     }
   };
 

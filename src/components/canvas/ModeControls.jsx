@@ -35,8 +35,10 @@ export default function ModeControls() {
         <div style={{ width: '100%', padding: '0 10px' }}>
           <button
             onClick={() => {
-              // This will be wired up to open string modal
-              alert('Open string modal - to be implemented');
+              const newText = prompt('Enter the string to annotate:');
+              if (newText && newText.trim()) {
+                useAnnotatorStore.getState().setText(newText.trim());
+              }
             }}
             style={{
               width: '100%',
@@ -87,7 +89,12 @@ export default function ModeControls() {
           <div style={{ paddingLeft: '10px' }}>
             <span style={{ fontSize: '11px', color: '#666' }}>Write a string to begin:</span>
             <button
-              onClick={() => alert('Open string modal - to be implemented')}
+              onClick={() => {
+                const newText = prompt('Enter the string to annotate:');
+                if (newText && newText.trim()) {
+                  useAnnotatorStore.getState().setText(newText.trim());
+                }
+              }}
               style={{
                 padding: '4px 10px',
                 fontSize: '11px',
