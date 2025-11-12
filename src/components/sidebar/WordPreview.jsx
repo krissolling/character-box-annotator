@@ -33,6 +33,8 @@ export default function WordPreview() {
   const updateFilter = useAnnotatorStore((state) => state.updateFilter);
   const updateKerning = useAnnotatorStore((state) => state.updateKerning);
   const imageFile = useAnnotatorStore((state) => state.imageFile);
+  const selectedVariants = useAnnotatorStore((state) => state.selectedVariants);
+  const uniqueChars = useAnnotatorStore((state) => state.uniqueChars);
 
   const handleDownload = () => {
     const canvas = canvasRef.current;
@@ -498,10 +500,18 @@ export default function WordPreview() {
 
     // Instead of using boxes directly, create an array of boxes based on the text string
     // This allows us to show "HELLO" with two L's instead of just "HELO"
+    // Now also respects selected variants for each character
     const textChars = text.split('');
     const displayBoxes = textChars.map(char => {
-      // Find the box for this character
-      return boxes.find(box => box.char === char);
+      // Find the charIndex for this character
+      const charIndex = uniqueChars.indexOf(char);
+      if (charIndex === -1) return undefined;
+
+      // Get the selected variant for this character (default to 0)
+      const selectedVariantId = selectedVariants[charIndex] || 0;
+
+      // Find the box with matching charIndex and variantId
+      return boxes.find(box => box.charIndex === charIndex && box.variantId === selectedVariantId);
     }).filter(box => box !== undefined); // Filter out characters that don't have boxes yet
 
     // Clear character positions for click detection

@@ -29,7 +29,7 @@ export default function BaselineControls() {
       <h3 style={titleStyle}>Baselines</h3>
 
       {!hasBaselines ? (
-        <div style={{ textAlign: 'center', color: '#999', fontSize: '13px', fontStyle: 'italic', padding: '20px 0' }}>
+        <div style={{ textAlign: 'center', color: '#999', fontSize: '11px', fontStyle: 'italic', padding: '4px 0' }}>
           No baselines yet
         </div>
       ) : (

@@ -32,6 +32,7 @@ const useAnnotatorStore = create((set, get) => {
     boxes: [],
     currentCharIndex: 0,
     uniqueChars: savedText ? [...new Set(savedText.split(''))] : [],
+    selectedVariants: {}, // Maps charIndex to selected variantId (default 0)
 
   // Canvas state
   scale: 1,
@@ -124,6 +125,10 @@ const useAnnotatorStore = create((set, get) => {
   },
 
   addBox: (box) => set((state) => {
+    // Auto-assign variantId based on existing boxes for this charIndex
+    const existingVariants = state.boxes.filter(b => b.charIndex === box.charIndex);
+    box.variantId = existingVariants.length; // 0 for first, 1 for second, etc.
+
     // Find closest baseline and assign to box
     const baselineInfo = get().findClosestBaseline(box.y, box.height, box.x, box.width);
     if (baselineInfo) {
@@ -159,9 +164,21 @@ const useAnnotatorStore = create((set, get) => {
     boxes: state.boxes.filter((_, i) => i !== index)
   })),
 
+  // Get all variant boxes for a specific charIndex
+  getVariantsForChar: (charIndex) => {
+    const state = get();
+    return state.boxes
+      .filter(box => box.charIndex === charIndex)
+      .sort((a, b) => a.variantId - b.variantId);
+  },
+
   setSelectedBox: (index) => set({ selectedBox: index }),
 
   setCurrentCharIndex: (index) => set({ currentCharIndex: index }),
+
+  setSelectedVariant: (charIndex, variantId) => set((state) => ({
+    selectedVariants: { ...state.selectedVariants, [charIndex]: variantId }
+  })),
 
   nextChar: () => set((state) => {
     const nextIndex = state.currentCharIndex + 1;

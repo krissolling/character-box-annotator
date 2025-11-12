@@ -1,6 +1,9 @@
+import { useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 
 export default function FilterControls() {
+  const [slidersExpanded, setSlidersExpanded] = useState(false);
   const imageFilters = useAnnotatorStore((state) => state.imageFilters);
   const updateFilter = useAnnotatorStore((state) => state.updateFilter);
   const resetFilters = useAnnotatorStore((state) => state.resetFilters);
@@ -195,11 +198,28 @@ export default function FilterControls() {
 
   return (
     <div style={panelStyle}>
-      <h3 style={{ fontSize: '13px', fontWeight: 600, color: '#333', marginBottom: '10px' }}>
-        Visual Controls
-      </h3>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+        <h3 style={{ fontSize: '13px', fontWeight: 600, color: '#333', margin: 0 }}>
+          Visual Controls
+        </h3>
+        <button
+          onClick={() => setSlidersExpanded(!slidersExpanded)}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            color: '#666'
+          }}
+          title={slidersExpanded ? 'Collapse sliders' : 'Expand sliders'}
+        >
+          {slidersExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+      </div>
 
-      {/* Invert */}
+      {/* Invert - Always visible */}
       <div style={controlRowStyle}>
         <label style={labelStyle}>Invert</label>
         <div style={{ flex: 1 }}></div>
@@ -211,72 +231,77 @@ export default function FilterControls() {
         />
       </div>
 
-      {/* Brightness */}
-      <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
-        <label style={labelStyle}>Brightness</label>
-        <input
-          type="range"
-          min="0"
-          max="200"
-          value={imageFilters.brightness}
-          onChange={(e) => updateFilter('brightness', parseInt(e.target.value))}
-          style={sliderStyle}
-        />
-      </div>
+      {/* Collapsible Sliders */}
+      {slidersExpanded && (
+        <>
+          {/* Brightness */}
+          <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
+            <label style={labelStyle}>Brightness</label>
+            <input
+              type="range"
+              min="0"
+              max="200"
+              value={imageFilters.brightness}
+              onChange={(e) => updateFilter('brightness', parseInt(e.target.value))}
+              style={sliderStyle}
+            />
+          </div>
 
-      {/* Contrast */}
-      <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
-        <label style={labelStyle}>Contrast</label>
-        <input
-          type="range"
-          min="0"
-          max="200"
-          value={imageFilters.contrast}
-          onChange={(e) => updateFilter('contrast', parseInt(e.target.value))}
-          style={sliderStyle}
-        />
-      </div>
+          {/* Contrast */}
+          <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
+            <label style={labelStyle}>Contrast</label>
+            <input
+              type="range"
+              min="0"
+              max="200"
+              value={imageFilters.contrast}
+              onChange={(e) => updateFilter('contrast', parseInt(e.target.value))}
+              style={sliderStyle}
+            />
+          </div>
 
-      {/* Grayscale */}
-      <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
-        <label style={labelStyle}>Grayscale</label>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={imageFilters.grayscale}
-          onChange={(e) => updateFilter('grayscale', parseInt(e.target.value))}
-          style={sliderStyle}
-        />
-      </div>
+          {/* Grayscale */}
+          <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
+            <label style={labelStyle}>Grayscale</label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={imageFilters.grayscale}
+              onChange={(e) => updateFilter('grayscale', parseInt(e.target.value))}
+              style={sliderStyle}
+            />
+          </div>
 
-      {/* Shadows */}
-      <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
-        <label style={labelStyle}>Shadows</label>
-        <input
-          type="range"
-          min="-100"
-          max="100"
-          value={imageFilters.shadows}
-          onChange={(e) => updateFilter('shadows', parseInt(e.target.value))}
-          style={sliderStyle}
-        />
-      </div>
+          {/* Shadows */}
+          <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
+            <label style={labelStyle}>Shadows</label>
+            <input
+              type="range"
+              min="-100"
+              max="100"
+              value={imageFilters.shadows}
+              onChange={(e) => updateFilter('shadows', parseInt(e.target.value))}
+              style={sliderStyle}
+            />
+          </div>
 
-      {/* Highlights */}
-      <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
-        <label style={labelStyle}>Highlights</label>
-        <input
-          type="range"
-          min="-100"
-          max="100"
-          value={imageFilters.highlights}
-          onChange={(e) => updateFilter('highlights', parseInt(e.target.value))}
-          style={sliderStyle}
-        />
-      </div>
+          {/* Highlights */}
+          <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
+            <label style={labelStyle}>Highlights</label>
+            <input
+              type="range"
+              min="-100"
+              max="100"
+              value={imageFilters.highlights}
+              onChange={(e) => updateFilter('highlights', parseInt(e.target.value))}
+              style={sliderStyle}
+            />
+          </div>
+        </>
+      )}
 
-      {/* Auto and Reset buttons */}
+      {/* Auto and Reset buttons - Always visible */}
       <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
         <button
           onClick={handleAutoAdjust}

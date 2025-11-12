@@ -149,9 +149,9 @@ export default function EditedCharacters() {
         <div style={{
           textAlign: 'center',
           color: '#999',
-          fontSize: '13px',
+          fontSize: '11px',
           fontStyle: 'italic',
-          padding: '20px 0'
+          padding: '4px 0'
         }}>
           No edited characters yet
         </div>

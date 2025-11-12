@@ -906,14 +906,7 @@ export default function AnnotationCanvas() {
       if (currentCharIndex === -1) {
         return;
       }
-      // Check if current character already has a box
-      if (currentCharIndex >= 0 && currentCharIndex < uniqueChars.length) {
-        const hasBox = boxes.some(box => box.charIndex === currentCharIndex);
-        if (hasBox) {
-          // Character already has a box, don't allow drawing
-          return;
-        }
-      }
+      // Allow drawing multiple boxes for the same character (variants)
       setIsDrawing(true);
       setStartPos(pos);
       setCurrentBox({ x: pos.x, y: pos.y, width: 0, height: 0 });
@@ -1082,7 +1075,10 @@ export default function AnnotationCanvas() {
       if (angledBaselines.length === 0 && angledBaselineLineStart) {
         setAngledBaselineLineEnd(pos);
       }
-      // For subsequent baselines, don't update on hover - baseline is locked after click
+      // For subsequent baselines, update position during drag
+      else if (angledBaselines.length > 0 && tempAngledBaselinePos !== null) {
+        setTempAngledBaselinePos(pos);
+      }
       return;
     }
 

@@ -26,10 +26,8 @@ function App() {
         // Delete selected box
         if (selectedBox !== null && !e.target.matches('input, textarea')) {
           e.preventDefault();
-          if (confirm('Delete selected box?')) {
-            deleteBox(selectedBox);
-            setSelectedBox(null);
-          }
+          deleteBox(selectedBox);
+          setSelectedBox(null);
         }
       }
     };
