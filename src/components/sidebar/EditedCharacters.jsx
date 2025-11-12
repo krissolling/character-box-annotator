@@ -79,11 +79,11 @@ export default function EditedCharacters() {
       ctx.beginPath();
       box.brushMask.forEach(stroke => {
         stroke.points.forEach((point, i) => {
-          // Denormalize from 0-1 coordinates to pixel coordinates
-          const pixelX = point.x * box.width;
-          const pixelY = point.y * box.height;
-          const x = charPadding + pixelX;
-          const y = charPadding + pixelY;
+          // Convert from absolute image coordinates to box-relative coordinates
+          const boxRelativeX = point.x - box.x;
+          const boxRelativeY = point.y - box.y;
+          const x = charPadding + boxRelativeX;
+          const y = charPadding + boxRelativeY;
           if (i === 0) {
             ctx.moveTo(x, y);
           } else {
@@ -94,15 +94,13 @@ export default function EditedCharacters() {
 
       // Create rounded caps for strokes
       box.brushMask.forEach(stroke => {
-        // Denormalize size from 0-1 to pixels
-        const pixelSize = stroke.size * Math.max(box.width, box.height);
-        const radius = pixelSize / 2;
+        const radius = stroke.size / 2;
         stroke.points.forEach(point => {
-          // Denormalize from 0-1 coordinates to pixel coordinates
-          const pixelX = point.x * box.width;
-          const pixelY = point.y * box.height;
-          const x = charPadding + pixelX;
-          const y = charPadding + pixelY;
+          // Convert from absolute image coordinates to box-relative coordinates
+          const boxRelativeX = point.x - box.x;
+          const boxRelativeY = point.y - box.y;
+          const x = charPadding + boxRelativeX;
+          const y = charPadding + boxRelativeY;
           ctx.moveTo(x + radius, y);
           ctx.arc(x, y, radius, 0, Math.PI * 2);
         });
@@ -129,14 +127,13 @@ export default function EditedCharacters() {
         ctx.globalCompositeOperation = 'destination-out';
         ctx.fillStyle = 'rgba(0,0,0,1)';
         stroke.points.forEach(point => {
-          // Denormalize from 0-1 coordinates to pixel coordinates
-          const pixelX = point.x * box.width;
-          const pixelY = point.y * box.height;
-          const pixelSize = stroke.size * Math.max(box.width, box.height);
-          const x = charPadding + pixelX;
-          const y = charPadding + pixelY;
+          // Convert from absolute image coordinates to box-relative coordinates
+          const boxRelativeX = point.x - box.x;
+          const boxRelativeY = point.y - box.y;
+          const x = charPadding + boxRelativeX;
+          const y = charPadding + boxRelativeY;
           ctx.beginPath();
-          ctx.arc(x, y, pixelSize / 2, 0, Math.PI * 2);
+          ctx.arc(x, y, stroke.size / 2, 0, Math.PI * 2);
           ctx.fill();
         });
         ctx.globalCompositeOperation = 'source-over';
