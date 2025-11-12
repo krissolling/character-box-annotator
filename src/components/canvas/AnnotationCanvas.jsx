@@ -323,10 +323,27 @@ export default function AnnotationCanvas() {
       ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 2;
       ctx.strokeRect(box.x * zoomLevel, box.y * zoomLevel, box.width * zoomLevel, box.height * zoomLevel);
 
-      // Draw character label
+      // Draw character label with smart positioning to avoid edge cutoff
       ctx.fillStyle = isSelected ? '#2196F3' : isHovered ? '#FF9800' : '#4CAF50';
       ctx.font = `bold 16px Arial`;
-      ctx.fillText(box.char, box.x * zoomLevel + 4, box.y * zoomLevel + 20);
+
+      // Calculate label position based on box location
+      const labelPadding = 4;
+      const labelHeight = 16; // Font size
+      let labelX = box.x * zoomLevel + labelPadding;
+      let labelY = box.y * zoomLevel + labelHeight + labelPadding;
+
+      // If box is near top edge, draw label below the box instead
+      if (box.y * zoomLevel < labelHeight + labelPadding + 5) {
+        labelY = (box.y + box.height) * zoomLevel + labelHeight + labelPadding;
+      }
+
+      // If box is near left edge, ensure label doesn't go off-canvas
+      if (box.x * zoomLevel < labelPadding) {
+        labelX = labelPadding;
+      }
+
+      ctx.fillText(box.char, labelX, labelY);
 
       // Draw corner handles for selected or hovered box
       if (isSelected || isHovered) {
@@ -382,12 +399,29 @@ export default function AnnotationCanvas() {
       ctx.strokeRect(currentBox.x * zoomLevel, currentBox.y * zoomLevel, currentBox.width * zoomLevel, currentBox.height * zoomLevel);
       ctx.setLineDash([]);
 
-      // Draw character label for currently drawn box
+      // Draw character label for currently drawn box with smart positioning
       const currentChar = uniqueChars[currentCharIndex];
       if (currentChar) {
         ctx.fillStyle = '#FF9800';
         ctx.font = `bold 16px Arial`;
-        ctx.fillText(currentChar, currentBox.x * zoomLevel + 4, currentBox.y * zoomLevel + 20);
+
+        // Calculate label position based on box location
+        const labelPadding = 4;
+        const labelHeight = 16; // Font size
+        let labelX = currentBox.x * zoomLevel + labelPadding;
+        let labelY = currentBox.y * zoomLevel + labelHeight + labelPadding;
+
+        // If box is near top edge, draw label below the box instead
+        if (currentBox.y * zoomLevel < labelHeight + labelPadding + 5) {
+          labelY = (currentBox.y + currentBox.height) * zoomLevel + labelHeight + labelPadding;
+        }
+
+        // If box is near left edge, ensure label doesn't go off-canvas
+        if (currentBox.x * zoomLevel < labelPadding) {
+          labelX = labelPadding;
+        }
+
+        ctx.fillText(currentChar, labelX, labelY);
       }
 
       ctx.restore();
