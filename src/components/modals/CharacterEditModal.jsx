@@ -35,8 +35,8 @@ export default function CharacterEditModal() {
     // Set canvas size to box size with padding
     const PADDING = 20;
 
-    // Calculate scale to fit in modal (max 600px width or height)
-    const MAX_DISPLAY_SIZE = 600;
+    // Calculate scale to fit in modal (max 400px to ensure full modal fits in viewport)
+    const MAX_DISPLAY_SIZE = 400;
     const baseWidth = box.width + PADDING * 2;
     const baseHeight = box.height + PADDING * 2;
 
