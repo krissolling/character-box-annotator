@@ -287,7 +287,23 @@ export default function AnnotationCanvas() {
       ctx.translate(-centerX, -centerY);
     }
 
-    // Draw image with zoom (no filters - filters are applied to word preview)
+    // Apply filters
+    const filters = [];
+    if (imageFilters.grayscale > 0) {
+      filters.push(`grayscale(${imageFilters.grayscale}%)`);
+    }
+    if (imageFilters.invert) {
+      filters.push('invert(1)');
+    }
+    if (imageFilters.brightness !== 100) {
+      filters.push(`brightness(${imageFilters.brightness}%)`);
+    }
+    if (imageFilters.contrast !== 100) {
+      filters.push(`contrast(${imageFilters.contrast}%)`);
+    }
+    ctx.filter = filters.join(' ') || 'none';
+
+    // Draw image with zoom and filters
     ctx.drawImage(image, 0, 0, displayWidth, displayHeight);
 
     ctx.restore();
@@ -629,7 +645,7 @@ export default function AnnotationCanvas() {
 
       ctx.restore();
     }
-  }, [image, boxes, currentBox, selectedBox, hoveredBox, zoomLevel, panOffset, isSelectingAutoSolveRegion, autoSolveRegions, currentAutoSolveRegion, isBrushBoxMode, brushStrokes, currentStroke, brushBoxSize, mousePos, isDrawing, imageRotation, isRotationMode, rotationLineStart, rotationLineEnd, baselines, isBaselineMode, tempBaselineY, angledBaselines, isAngledBaselineMode, angledBaselineLineStart, angledBaselineLineEnd, tempAngledBaselinePos]);
+  }, [image, boxes, currentBox, selectedBox, hoveredBox, zoomLevel, panOffset, isSelectingAutoSolveRegion, autoSolveRegions, currentAutoSolveRegion, isBrushBoxMode, brushStrokes, currentStroke, brushBoxSize, mousePos, isDrawing, imageRotation, isRotationMode, rotationLineStart, rotationLineEnd, baselines, isBaselineMode, tempBaselineY, angledBaselines, isAngledBaselineMode, angledBaselineLineStart, angledBaselineLineEnd, tempAngledBaselinePos, imageFilters]);
 
   const getMousePos = (e) => {
     const canvas = canvasRef.current;
