@@ -1284,22 +1284,41 @@ export default function AnnotationCanvas() {
   const handleWheel = (e) => {
     e.preventDefault();
 
-    // Calculate minimum zoom to ensure image fills container
+    // Calculate minimum zoom to allow 50% of viewport height
     let minZoom = 0.1;
     if (containerRef.current && image) {
       const containerRect = containerRef.current.getBoundingClientRect();
-      const containerWidth = containerRect.width;
       const containerHeight = containerRect.height;
 
-      // Min zoom is when image just fills the container (whichever dimension is limiting)
-      const zoomToFitWidth = containerWidth / image.width;
-      const zoomToFitHeight = containerHeight / image.height;
-      minZoom = Math.min(zoomToFitWidth, zoomToFitHeight);
+      // Min zoom is 50% of viewport height
+      minZoom = (containerHeight * 0.5) / image.height;
     }
 
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
     const newZoom = Math.max(minZoom, Math.min(4.0, zoomLevel + delta));
-    useAnnotatorStore.getState().setZoomLevel(newZoom);
+
+    // Zoom toward cursor position
+    if (canvasRef.current && newZoom !== zoomLevel) {
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+
+      // Get mouse position relative to canvas
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      // Get mouse position in image coordinates (before zoom)
+      const imageX = (mouseX - panOffset.x) / zoomLevel;
+      const imageY = (mouseY - panOffset.y) / zoomLevel;
+
+      // Calculate new pan offset to keep mouse position fixed
+      const newPanX = mouseX - imageX * newZoom;
+      const newPanY = mouseY - imageY * newZoom;
+
+      useAnnotatorStore.getState().setZoomLevel(newZoom);
+      setPanOffset({ x: newPanX, y: newPanY });
+    } else {
+      useAnnotatorStore.getState().setZoomLevel(newZoom);
+    }
   };
 
   if (!image) return null;
