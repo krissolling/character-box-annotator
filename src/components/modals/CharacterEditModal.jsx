@@ -320,6 +320,17 @@ export default function CharacterEditModal() {
 
   const handleMouseLeave = () => {
     setCursorPos(null);
+
+    // If user leaves canvas while erasing, finalize the stroke
+    if (isErasing) {
+      setIsErasing(false);
+
+      if (currentStrokeRef.current) {
+        eraseMaskRef.current.push(currentStrokeRef.current);
+        currentStrokeRef.current = null;
+        setHasChanges(true);
+      }
+    }
   };
 
   const handleMouseUp = () => {
