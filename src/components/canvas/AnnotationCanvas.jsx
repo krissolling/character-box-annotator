@@ -356,6 +356,15 @@ export default function AnnotationCanvas() {
       ctx.setLineDash([5, 5]);
       ctx.strokeRect(currentBox.x * zoomLevel, currentBox.y * zoomLevel, currentBox.width * zoomLevel, currentBox.height * zoomLevel);
       ctx.setLineDash([]);
+
+      // Draw character label for currently drawn box
+      const currentChar = uniqueChars[currentCharIndex];
+      if (currentChar) {
+        ctx.fillStyle = '#FF9800';
+        ctx.font = `bold 16px Arial`;
+        ctx.fillText(currentChar, currentBox.x * zoomLevel + 4, currentBox.y * zoomLevel + 20);
+      }
+
       ctx.restore();
     }
 
