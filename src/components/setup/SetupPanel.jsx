@@ -42,14 +42,37 @@ export default function SetupPanel() {
         return;
       }
 
-      // Warn if there are existing boxes and text is changing
+      // Smart box preservation: only remove boxes for characters that no longer exist
       const boxes = useAnnotatorStore.getState().boxes;
       if (boxes.length > 0) {
-        if (!confirm('Changing the string will clear all existing boxes. Continue?')) {
-          return;
+        const newChars = [...new Set(newText.split(''))];
+        const oldChars = [...new Set(currentText.split(''))];
+        const removedChars = oldChars.filter(c => !newChars.includes(c));
+
+        if (removedChars.length > 0) {
+          const removedList = removedChars.join(', ');
+          if (!confirm(`This will remove boxes for: ${removedList}\n\nBoxes for other characters will be preserved. Continue?`)) {
+            return;
+          }
+
+          // Keep only boxes for characters that still exist in new string
+          const preservedBoxes = boxes.filter(box => newChars.includes(box.char));
+
+          // Update editedCharData to match new box indices
+          const oldEditedCharData = useAnnotatorStore.getState().editedCharData;
+          const newEditedCharData = {};
+
+          preservedBoxes.forEach((box, newIndex) => {
+            const oldIndex = boxes.indexOf(box);
+            if (oldEditedCharData[oldIndex]) {
+              newEditedCharData[newIndex] = oldEditedCharData[oldIndex];
+            }
+          });
+
+          useAnnotatorStore.getState().setBoxes(preservedBoxes);
+          useAnnotatorStore.getState().setEditedCharData(newEditedCharData);
         }
-        // Clear boxes
-        useAnnotatorStore.getState().setBoxes([]);
+        // If no characters removed, keep all boxes
       }
 
       // Update text
