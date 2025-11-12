@@ -1348,6 +1348,18 @@ export default function AnnotationCanvas() {
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={(e) => {
+            // Clear temporary baseline if user leaves canvas while drawing
+            if (isBaselineMode && tempBaselineY !== null) {
+              setTempBaselineY(null);
+            }
+
+            // Clear temporary angled baseline if user leaves canvas while drawing
+            if (isAngledBaselineMode) {
+              setAngledBaselineLineStart(null);
+              setAngledBaselineLineEnd(null);
+              setTempAngledBaselinePos(null);
+            }
+
             handleMouseUp(e);
             setHoveredBox(null);
             setHoverCorner(null);
