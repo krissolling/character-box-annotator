@@ -944,7 +944,34 @@ export default function AnnotationCanvas() {
 
     // Brush box mode - continue drawing stroke
     if (isBrushBoxMode && isDrawing) {
-      setCurrentStroke((prev) => [...prev, pos]);
+      setCurrentStroke((prev) => {
+        if (prev.length === 0) {
+          return [pos];
+        }
+
+        // Interpolate between last point and current point for smooth strokes
+        const lastPoint = prev[prev.length - 1];
+        const dx = pos.x - lastPoint.x;
+        const dy = pos.y - lastPoint.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Interpolate if distance is greater than half the brush size
+        const stepSize = brushBoxSize / 2;
+        if (distance > stepSize) {
+          const steps = Math.ceil(distance / stepSize);
+          const newPoints = [];
+          for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            newPoints.push({
+              x: lastPoint.x + dx * t,
+              y: lastPoint.y + dy * t
+            });
+          }
+          return [...prev, ...newPoints];
+        } else {
+          return [...prev, pos];
+        }
+      });
       return;
     }
 

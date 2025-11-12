@@ -362,20 +362,56 @@ export default function CharacterEditModal() {
     const imageX = box.x + boxRelativeX;
     const imageY = box.y + boxRelativeY;
 
-    // Add point to current stroke in ABSOLUTE image coordinates
-    currentStrokeRef.current.points.push({
-      x: imageX,  // Absolute image coordinates
-      y: imageY   // Absolute image coordinates
-    });
+    // Interpolate between last point and current point for smooth strokes
+    const points = currentStrokeRef.current.points;
+    const lastPoint = points[points.length - 1];
 
-    // For smooth drawing, erase at display coordinates immediately
-    const ctx = canvas.getContext('2d');
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = 'rgba(0,0,0,1)';
-    ctx.beginPath();
-    ctx.arc(displayX, displayY, editBrushSize / 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
+    // Calculate distance between last point and current point
+    const dx = imageX - lastPoint.x;
+    const dy = imageY - lastPoint.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // Interpolate if distance is greater than half the brush size
+    const stepSize = (editBrushSize / scale) / 2;
+    if (distance > stepSize) {
+      const steps = Math.ceil(distance / stepSize);
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const interpX = lastPoint.x + dx * t;
+        const interpY = lastPoint.y + dy * t;
+        points.push({
+          x: interpX,  // Absolute image coordinates
+          y: interpY   // Absolute image coordinates
+        });
+
+        // Draw interpolated point immediately for visual feedback
+        const interpDisplayX = (interpX - box.x) * scale + (PADDING * scale);
+        const interpDisplayY = (interpY - box.y) * scale + (PADDING * scale);
+
+        const ctx = canvas.getContext('2d');
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fillStyle = 'rgba(0,0,0,1)';
+        ctx.beginPath();
+        ctx.arc(interpDisplayX, interpDisplayY, editBrushSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+      }
+    } else {
+      // Add point to current stroke in ABSOLUTE image coordinates
+      points.push({
+        x: imageX,  // Absolute image coordinates
+        y: imageY   // Absolute image coordinates
+      });
+
+      // For smooth drawing, erase at display coordinates immediately
+      const ctx = canvas.getContext('2d');
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+      ctx.beginPath();
+      ctx.arc(displayX, displayY, editBrushSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    }
   };
 
   const handleReset = () => {
