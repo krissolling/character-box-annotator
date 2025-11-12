@@ -90,8 +90,11 @@ export default function CharacterEditModal() {
         ctx.beginPath();
         box.brushMask.forEach(stroke => {
           stroke.points.forEach((point, i) => {
-            const x = (PADDING + point.x) * scale;
-            const y = (PADDING + point.y) * scale;
+            // Denormalize from 0-1 coordinates to pixel coordinates
+            const pixelX = point.x * box.width;
+            const pixelY = point.y * box.height;
+            const x = (PADDING + pixelX) * scale;
+            const y = (PADDING + pixelY) * scale;
             if (i === 0) {
               ctx.moveTo(x, y);
             } else {
@@ -102,10 +105,15 @@ export default function CharacterEditModal() {
 
         // Create rounded caps for strokes
         box.brushMask.forEach(stroke => {
-          const radius = (stroke.size / 2) * scale;
+          // Denormalize size from 0-1 to pixels
+          const pixelSize = stroke.size * Math.max(box.width, box.height);
+          const radius = (pixelSize / 2) * scale;
           stroke.points.forEach(point => {
-            const x = (PADDING + point.x) * scale;
-            const y = (PADDING + point.y) * scale;
+            // Denormalize from 0-1 coordinates to pixel coordinates
+            const pixelX = point.x * box.width;
+            const pixelY = point.y * box.height;
+            const x = (PADDING + pixelX) * scale;
+            const y = (PADDING + pixelY) * scale;
             ctx.moveTo(x + radius, y);
             ctx.arc(x, y, radius, 0, Math.PI * 2);
           });
@@ -123,15 +131,19 @@ export default function CharacterEditModal() {
 
       ctx.restore();
 
-      // Apply erase mask (from previous edit sessions) - coordinates are in original space, need to scale up
+      // Apply erase mask (from previous edit sessions) - denormalize from 0-1 coordinates
       eraseMaskRef.current.forEach(stroke => {
         ctx.globalCompositeOperation = 'destination-out';
         ctx.fillStyle = 'rgba(0,0,0,1)';
         stroke.points.forEach(point => {
-          // Scale from original coordinates to display coordinates
-          const displayX = (PADDING + point.x) * scale;
-          const displayY = (PADDING + point.y) * scale;
-          const displaySize = stroke.size * scale;
+          // Denormalize from 0-1 coordinates to pixel coordinates
+          const pixelX = point.x * box.width;
+          const pixelY = point.y * box.height;
+          const pixelSize = stroke.size * Math.max(box.width, box.height);
+
+          const displayX = (PADDING + pixelX) * scale;
+          const displayY = (PADDING + pixelY) * scale;
+          const displaySize = pixelSize * scale;
 
           ctx.beginPath();
           ctx.arc(displayX, displayY, displaySize / 2, 0, Math.PI * 2);
@@ -199,8 +211,11 @@ export default function CharacterEditModal() {
       ctx.beginPath();
       box.brushMask.forEach(stroke => {
         stroke.points.forEach((point, i) => {
-          const x = (PADDING + point.x) * scale;
-          const y = (PADDING + point.y) * scale;
+          // Denormalize from 0-1 coordinates to pixel coordinates
+          const pixelX = point.x * box.width;
+          const pixelY = point.y * box.height;
+          const x = (PADDING + pixelX) * scale;
+          const y = (PADDING + pixelY) * scale;
           if (i === 0) {
             ctx.moveTo(x, y);
           } else {
@@ -210,10 +225,15 @@ export default function CharacterEditModal() {
       });
 
       box.brushMask.forEach(stroke => {
-        const radius = (stroke.size / 2) * scale;
+        // Denormalize size from 0-1 to pixels
+        const pixelSize = stroke.size * Math.max(box.width, box.height);
+        const radius = (pixelSize / 2) * scale;
         stroke.points.forEach(point => {
-          const x = (PADDING + point.x) * scale;
-          const y = (PADDING + point.y) * scale;
+          // Denormalize from 0-1 coordinates to pixel coordinates
+          const pixelX = point.x * box.width;
+          const pixelY = point.y * box.height;
+          const x = (PADDING + pixelX) * scale;
+          const y = (PADDING + pixelY) * scale;
           ctx.moveTo(x + radius, y);
           ctx.arc(x, y, radius, 0, Math.PI * 2);
         });
@@ -231,15 +251,19 @@ export default function CharacterEditModal() {
 
     ctx.restore();
 
-    // Apply erase mask (from edit sessions) - coordinates are in original space, need to scale up
+    // Apply erase mask (from edit sessions) - denormalize from 0-1 coordinates
     eraseMaskRef.current.forEach(stroke => {
       ctx.globalCompositeOperation = 'destination-out';
       ctx.fillStyle = 'rgba(0,0,0,1)';
       stroke.points.forEach(point => {
-        // Scale from original coordinates to display coordinates
-        const displayX = (PADDING + point.x) * scale;
-        const displayY = (PADDING + point.y) * scale;
-        const displaySize = stroke.size * scale;
+        // Denormalize from 0-1 coordinates to pixel coordinates
+        const pixelX = point.x * box.width;
+        const pixelY = point.y * box.height;
+        const pixelSize = stroke.size * Math.max(box.width, box.height);
+
+        const displayX = (PADDING + pixelX) * scale;
+        const displayY = (PADDING + pixelY) * scale;
+        const displaySize = pixelSize * scale;
 
         ctx.beginPath();
         ctx.arc(displayX, displayY, displaySize / 2, 0, Math.PI * 2);
@@ -259,15 +283,19 @@ export default function CharacterEditModal() {
     const displayX = e.clientX - rect.left;
     const displayY = e.clientY - rect.top;
 
-    // Convert to original image coordinates (remove padding and scale)
+    // Convert to box-relative coordinates (remove padding and scale)
     const PADDING = 20;
     const scale = scaleRef.current;
-    const originalX = displayX - (PADDING * scale);
-    const originalY = displayY - (PADDING * scale);
+    const boxRelativeX = (displayX - (PADDING * scale)) / scale;
+    const boxRelativeY = (displayY - (PADDING * scale)) / scale;
 
+    // Normalize to 0-1 coordinates relative to box dimensions
     currentStrokeRef.current = {
-      size: editBrushSize / scale, // Store size in original scale
-      points: [{ x: originalX / scale, y: originalY / scale }] // Store in original coordinates
+      size: editBrushSize / scale / Math.max(box.width, box.height), // Normalize size
+      points: [{
+        x: boxRelativeX / box.width,   // Normalize to 0-1
+        y: boxRelativeY / box.height   // Normalize to 0-1
+      }]
     };
 
     erase(e);
@@ -316,16 +344,16 @@ export default function CharacterEditModal() {
     const displayX = e.clientX - rect.left;
     const displayY = e.clientY - rect.top;
 
-    // Convert to original image coordinates (remove padding and scale)
+    // Convert to box-relative coordinates (remove padding and scale)
     const PADDING = 20;
     const scale = scaleRef.current;
-    const originalX = displayX - (PADDING * scale);
-    const originalY = displayY - (PADDING * scale);
+    const boxRelativeX = (displayX - (PADDING * scale)) / scale;
+    const boxRelativeY = (displayY - (PADDING * scale)) / scale;
 
-    // Add point to current stroke in ORIGINAL coordinates
+    // Add point to current stroke in NORMALIZED 0-1 coordinates
     currentStrokeRef.current.points.push({
-      x: originalX / scale,
-      y: originalY / scale
+      x: boxRelativeX / box.width,   // Normalize to 0-1
+      y: boxRelativeY / box.height   // Normalize to 0-1
     });
 
     // For smooth drawing, erase at display coordinates immediately

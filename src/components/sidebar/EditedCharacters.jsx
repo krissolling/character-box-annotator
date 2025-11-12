@@ -79,8 +79,11 @@ export default function EditedCharacters() {
       ctx.beginPath();
       box.brushMask.forEach(stroke => {
         stroke.points.forEach((point, i) => {
-          const x = charPadding + point.x;
-          const y = charPadding + point.y;
+          // Denormalize from 0-1 coordinates to pixel coordinates
+          const pixelX = point.x * box.width;
+          const pixelY = point.y * box.height;
+          const x = charPadding + pixelX;
+          const y = charPadding + pixelY;
           if (i === 0) {
             ctx.moveTo(x, y);
           } else {
@@ -91,10 +94,15 @@ export default function EditedCharacters() {
 
       // Create rounded caps for strokes
       box.brushMask.forEach(stroke => {
-        const radius = stroke.size / 2;
+        // Denormalize size from 0-1 to pixels
+        const pixelSize = stroke.size * Math.max(box.width, box.height);
+        const radius = pixelSize / 2;
         stroke.points.forEach(point => {
-          const x = charPadding + point.x;
-          const y = charPadding + point.y;
+          // Denormalize from 0-1 coordinates to pixel coordinates
+          const pixelX = point.x * box.width;
+          const pixelY = point.y * box.height;
+          const x = charPadding + pixelX;
+          const y = charPadding + pixelY;
           ctx.moveTo(x + radius, y);
           ctx.arc(x, y, radius, 0, Math.PI * 2);
         });
@@ -121,10 +129,14 @@ export default function EditedCharacters() {
         ctx.globalCompositeOperation = 'destination-out';
         ctx.fillStyle = 'rgba(0,0,0,1)';
         stroke.points.forEach(point => {
-          const x = charPadding + point.x;
-          const y = charPadding + point.y;
+          // Denormalize from 0-1 coordinates to pixel coordinates
+          const pixelX = point.x * box.width;
+          const pixelY = point.y * box.height;
+          const pixelSize = stroke.size * Math.max(box.width, box.height);
+          const x = charPadding + pixelX;
+          const y = charPadding + pixelY;
           ctx.beginPath();
-          ctx.arc(x, y, stroke.size / 2, 0, Math.PI * 2);
+          ctx.arc(x, y, pixelSize / 2, 0, Math.PI * 2);
           ctx.fill();
         });
         ctx.globalCompositeOperation = 'source-over';

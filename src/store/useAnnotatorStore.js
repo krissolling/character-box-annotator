@@ -267,20 +267,27 @@ const useAnnotatorStore = create((set, get) => {
     // Use exact brush radius (half the brush size) for precise bounding
     const brushRadius = state.brushBoxSize / 2;
 
+    const boxWidth = maxX - minX + brushRadius * 2;
+    const boxHeight = maxY - minY + brushRadius * 2;
+
     const box = {
       x: Math.max(0, minX - brushRadius),
       y: Math.max(0, minY - brushRadius),
-      width: maxX - minX + brushRadius * 2,
-      height: maxY - minY + brushRadius * 2,
+      width: boxWidth,
+      height: boxHeight,
       char: state.uniqueChars[state.currentCharIndex],
       charIndex: state.currentCharIndex,
-      // Store brush strokes as mask (normalized to box coordinates)
+      // Store brush strokes as mask (NORMALIZED to 0-1 coordinates relative to box)
       brushMask: state.brushStrokes.map(stroke => ({
-        points: stroke.points.map(p => ({
-          x: p.x - (minX - brushRadius),
-          y: p.y - (minY - brushRadius)
-        })),
-        size: stroke.size || state.brushBoxSize
+        points: stroke.points.map(p => {
+          const boxRelativeX = p.x - (minX - brushRadius);
+          const boxRelativeY = p.y - (minY - brushRadius);
+          return {
+            x: boxRelativeX / boxWidth,  // Normalize to 0-1
+            y: boxRelativeY / boxHeight   // Normalize to 0-1
+          };
+        }),
+        size: (stroke.size || state.brushBoxSize) / Math.max(boxWidth, boxHeight) // Normalize size too
       }))
     };
 
