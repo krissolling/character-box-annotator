@@ -81,19 +81,28 @@ export default function ToolPalette() {
         alert('Please upload an image first.');
         return;
       }
-      startRotationMode();
+      // Don't restart if already in rotation mode
+      if (!isRotationMode) {
+        startRotationMode();
+      }
     } else if (tool.value === 'baseline') {
       if (!image) {
         alert('Please upload an image first.');
         return;
       }
-      startBaselineMode();
+      // Don't restart if already in baseline mode
+      if (!isBaselineMode) {
+        startBaselineMode();
+      }
     } else if (tool.value === 'angled') {
       if (!image) {
         alert('Please upload an image first.');
         return;
       }
-      startAngledBaselineMode();
+      // Don't restart if already in angled baseline mode
+      if (!isAngledBaselineMode) {
+        startAngledBaselineMode();
+      }
     } else {
       // For box tool and pointer, explicitly clear all modes
       cancelAutoSolve();
