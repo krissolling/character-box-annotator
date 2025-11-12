@@ -1011,10 +1011,8 @@ export default function AnnotationCanvas() {
       // If no baselines yet, update the line end (drawing initial line)
       if (angledBaselines.length === 0 && angledBaselineLineStart) {
         setAngledBaselineLineEnd(pos);
-      } else if (tempAngledBaselinePos) {
-        // If baselines exist, update the temporary baseline position
-        setTempAngledBaselinePos(pos);
       }
+      // For subsequent baselines, don't update on hover - baseline is locked after click
       return;
     }
 
