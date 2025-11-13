@@ -7,6 +7,7 @@ export default function EditedCharacters() {
   const image = useAnnotatorStore((state) => state.image);
   const imageRotation = useAnnotatorStore((state) => state.imageRotation);
   const charPadding = useAnnotatorStore((state) => state.charPadding);
+  const openCharacterEdit = useAnnotatorStore((state) => state.openCharacterEdit);
 
   // Collect all edited boxes (both manually edited and brush-drawn)
   const editedBoxes = [];
@@ -163,6 +164,7 @@ export default function EditedCharacters() {
               item={item}
               renderCharacter={renderCharacter}
               image={image}
+              openCharacterEdit={openCharacterEdit}
             />
           ))}
         </div>
@@ -172,7 +174,7 @@ export default function EditedCharacters() {
 }
 
 // Separate component for each character thumbnail
-function CharacterThumbnail({ item, renderCharacter, image }) {
+function CharacterThumbnail({ item, renderCharacter, image, openCharacterEdit }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -183,6 +185,7 @@ function CharacterThumbnail({ item, renderCharacter, image }) {
 
   return (
     <div
+      onClick={() => openCharacterEdit(item.index)}
       style={{
         width: '50px',
         height: '50px',
@@ -190,8 +193,10 @@ function CharacterThumbnail({ item, renderCharacter, image }) {
         borderRadius: '6px',
         overflow: 'hidden',
         position: 'relative',
-        background: 'white'
+        background: 'white',
+        cursor: 'pointer'
       }}
+      title={`Edit character "${item.char}"`}
     >
       <canvas
         ref={canvasRef}
