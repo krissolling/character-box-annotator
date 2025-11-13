@@ -28,6 +28,7 @@ export default function AnnotationCanvas() {
   const addBox = useAnnotatorStore((state) => state.addBox);
   const selectedBox = useAnnotatorStore((state) => state.selectedBox);
   const setSelectedBox = useAnnotatorStore((state) => state.setSelectedBox);
+  const selectedVariants = useAnnotatorStore((state) => state.selectedVariants);
 
   // Mode cancel/start functions for Cmd key handling
   const cancelAutoSolve = useAnnotatorStore((state) => state.cancelAutoSolve);
@@ -327,6 +328,19 @@ export default function AnnotationCanvas() {
       }
 
       ctx.fillText(box.char, labelX, labelY);
+
+      // Draw star indicator if this is the selected variant for this character
+      const selectedVariantId = selectedVariants[box.charIndex] || 0;
+      const isSelectedVariant = box.variantId === selectedVariantId;
+      if (isSelectedVariant && boxes.filter(b => b.charIndex === box.charIndex).length > 1) {
+        // Only show star if there are multiple variants for this character
+        const starSize = 12;
+        const starX = (box.x + box.width) * zoomLevel - starSize - 2;
+        const starY = box.y * zoomLevel + starSize + 2;
+        ctx.fillStyle = '#FFD700'; // Gold color
+        ctx.font = `${starSize}px Arial`;
+        ctx.fillText('⭐', starX, starY);
+      }
 
       // Draw corner handles for selected or hovered box
       if (isSelected || isHovered) {
