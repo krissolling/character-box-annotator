@@ -498,21 +498,24 @@ export default function WordPreview() {
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
 
-    // Instead of using boxes directly, create an array of boxes based on the text string
+    // Instead of using boxes directly, create an array based on the text string
     // This allows us to show "HELLO" with two L's instead of just "HELO"
     // Now also respects selected variants for each character
+    // Keep ALL characters (even without boxes) to show placeholders
     const textChars = text.split('');
     const displayBoxes = textChars.map(char => {
       // Find the charIndex for this character
       const charIndex = uniqueChars.indexOf(char);
-      if (charIndex === -1) return undefined;
+      if (charIndex === -1) return { char, box: undefined }; // Unknown character
 
       // Get the selected variant for this character (default to 0)
       const selectedVariantId = selectedVariants[charIndex] || 0;
 
       // Find the box with matching charIndex and variantId
-      return boxes.find(box => box.charIndex === charIndex && box.variantId === selectedVariantId);
-    }).filter(box => box !== undefined); // Filter out characters that don't have boxes yet
+      const box = boxes.find(box => box.charIndex === charIndex && box.variantId === selectedVariantId);
+
+      return { char, box }; // Return both char and box (box may be undefined)
+    });
 
     // Clear character positions for click detection
     charPositionsRef.current = [];
@@ -530,13 +533,30 @@ export default function WordPreview() {
     const baselinedBoxes = displayBoxes.filter(box => box.baseline_offset !== undefined);
 
     // Calculate total width and max height
+    // Also calculate average box dimensions for placeholders
     let totalWidth = 0;
     let maxHeight = 0;
     let unifiedBaselineY = 0;
+    let totalBoxWidth = 0;
+    let totalBoxHeight = 0;
+    let boxCount = 0;
 
-    displayBoxes.forEach((box, index) => {
-      const boxWidth = box.width + charPadding * 2;
-      const boxHeight = box.height + charPadding * 2;
+    displayBoxes.forEach((item, index) => {
+      const { box } = item;
+
+      // Use actual box dimensions or placeholder dimensions
+      let boxWidth, boxHeight;
+      if (box) {
+        boxWidth = box.width + charPadding * 2;
+        boxHeight = box.height + charPadding * 2;
+        totalBoxWidth += box.width;
+        totalBoxHeight += box.height;
+        boxCount++;
+      } else {
+        // Placeholder: use average dimensions or generic size
+        boxWidth = 40; // Will be updated below if we have boxes
+        boxHeight = 60; // Will be updated below if we have boxes
+      }
 
       totalWidth += boxWidth;
       if (index < displayBoxes.length - 1) {
@@ -548,6 +568,10 @@ export default function WordPreview() {
 
       maxHeight = Math.max(maxHeight, boxHeight);
     });
+
+    // Calculate average dimensions for placeholders
+    const avgBoxWidth = boxCount > 0 ? Math.round(totalBoxWidth / boxCount) : 40;
+    const avgBoxHeight = boxCount > 0 ? Math.round(totalBoxHeight / boxCount) : 60;
 
     // Calculate canvas height based on baseline alignment
     let canvasHeight = maxHeight;
@@ -626,14 +650,24 @@ export default function WordPreview() {
     // Draw each character crop
     let currentX = canvasPadding;
 
-    displayBoxes.forEach((box, index) => {
-      const boxWidth = box.width + charPadding * 2;
-      const boxHeight = box.height + charPadding * 2;
+    displayBoxes.forEach((item, index) => {
+      const { char, box } = item;
+
+      // Calculate box dimensions (use actual or placeholder)
+      let boxWidth, boxHeight;
+      if (box) {
+        boxWidth = box.width + charPadding * 2;
+        boxHeight = box.height + charPadding * 2;
+      } else {
+        // Placeholder dimensions
+        boxWidth = avgBoxWidth + charPadding * 2;
+        boxHeight = avgBoxHeight + charPadding * 2;
+      }
 
       // Calculate Y position based on baseline alignment
       let yPos = canvasPadding;
 
-      if (box.baseline_offset !== undefined && unifiedBaselineY > 0) {
+      if (box && box.baseline_offset !== undefined && unifiedBaselineY > 0) {
         // Calculate baseline Y at current horizontal position
         let baselineYAtCurrentPos = unifiedBaselineY;
 
@@ -660,28 +694,60 @@ export default function WordPreview() {
         yPos = (canvasHeight - boxHeight) / 2;
       }
 
-      // Draw character crop from original image or edited version
+      // Draw character crop from original image or edited version, OR placeholder
       try {
-        ctx.save();
+        if (!box) {
+          // PLACEHOLDER RENDERING for characters without boxes
+          ctx.save();
 
-        // Apply filters
-        const filters = [];
-        if (imageFilters.grayscale > 0) {
-          filters.push(`grayscale(${imageFilters.grayscale}%)`);
-        }
-        if (imageFilters.invert) {
-          filters.push('invert(1)');
-        }
-        if (imageFilters.brightness !== 100) {
-          filters.push(`brightness(${imageFilters.brightness}%)`);
-        }
-        if (imageFilters.contrast !== 100) {
-          filters.push(`contrast(${imageFilters.contrast}%)`);
-        }
-        ctx.filter = filters.join(' ') || 'none';
+          // Draw placeholder box with dotted border
+          ctx.strokeStyle = '#999';
+          ctx.fillStyle = '#f5f5f5';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([5, 5]);
+          ctx.fillRect(currentX, yPos, boxWidth, boxHeight);
+          ctx.strokeRect(currentX, yPos, boxWidth, boxHeight);
+          ctx.setLineDash([]);
 
-        // Find original box index
-        const originalBoxIndex = boxes.findIndex(b => b === box);
+          // Draw the character text in center
+          ctx.fillStyle = '#999';
+          ctx.font = `${Math.round(boxHeight * 0.5)}px Arial`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(char, currentX + boxWidth / 2, yPos + boxHeight / 2);
+
+          ctx.restore();
+
+          // Store placeholder position for click detection (though clicking does nothing)
+          charPositionsRef.current.push({
+            x: currentX,
+            y: yPos,
+            width: boxWidth,
+            height: boxHeight,
+            box: null // No box associated
+          });
+        } else {
+          // NORMAL RENDERING for actual boxes
+          ctx.save();
+
+          // Apply filters
+          const filters = [];
+          if (imageFilters.grayscale > 0) {
+            filters.push(`grayscale(${imageFilters.grayscale}%)`);
+          }
+          if (imageFilters.invert) {
+            filters.push('invert(1)');
+          }
+          if (imageFilters.brightness !== 100) {
+            filters.push(`brightness(${imageFilters.brightness}%)`);
+          }
+          if (imageFilters.contrast !== 100) {
+            filters.push(`contrast(${imageFilters.contrast}%)`);
+          }
+          ctx.filter = filters.join(' ') || 'none';
+
+          // Find original box index
+          const originalBoxIndex = boxes.findIndex(b => b === box);
 
         // Always draw from original with masks applied dynamically (no pre-rendered PNG)
         // Apply brush mask if it exists (for clipping)
@@ -751,32 +817,33 @@ export default function WordPreview() {
           }
         }
 
-        ctx.restore();
+          ctx.restore();
 
-        // Store character position for click detection
-        charPositionsRef.current.push({
-          x: currentX,
-          y: yPos,
-          width: boxWidth,
-          height: boxHeight,
-          box: box
-        });
-
-        // Store kerning handle position (for all except first character)
-        // Handle should be at the left edge of current character (before it's drawn)
-        if (index > 0) {
-          // Calculate handle position at the gap between previous and current character
-          // This is where we are now, before drawing the current character
-          const prevCharRightEdge = currentX - letterSpacing - (kerningAdjustments[index - 1] || 0);
-          const handleX = prevCharRightEdge + (letterSpacing / 2) + ((kerningAdjustments[index - 1] || 0) / 2);
-
-          kerningHandlesRef.current.push({
-            index: index - 1, // Kerning adjustment index (between prev and current char)
-            x: handleX,
-            y: yPos + boxHeight + 5, // Position below the character
-            canvasHeight: canvasHeight
+          // Store character position for click detection
+          charPositionsRef.current.push({
+            x: currentX,
+            y: yPos,
+            width: boxWidth,
+            height: boxHeight,
+            box: box
           });
-        }
+
+          // Store kerning handle position (for all except first character)
+          // Handle should be at the left edge of current character (before it's drawn)
+          if (index > 0) {
+            // Calculate handle position at the gap between previous and current character
+            // This is where we are now, before drawing the current character
+            const prevCharRightEdge = currentX - letterSpacing - (kerningAdjustments[index - 1] || 0);
+            const handleX = prevCharRightEdge + (letterSpacing / 2) + ((kerningAdjustments[index - 1] || 0) / 2);
+
+            kerningHandlesRef.current.push({
+              index: index - 1, // Kerning adjustment index (between prev and current char)
+              x: handleX,
+              y: yPos + boxHeight + 5, // Position below the character
+              canvasHeight: canvasHeight
+            });
+          }
+        } // End of else block for normal rendering
       } catch (error) {
         console.error('Error drawing character:', error);
       }
