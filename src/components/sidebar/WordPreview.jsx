@@ -530,32 +530,42 @@ export default function WordPreview() {
     const baselineSlope = Math.tan(baselineAngleRad);
 
     // Find boxes with baseline alignment
-    const baselinedBoxes = displayBoxes.filter(box => box.baseline_offset !== undefined);
+    const baselinedBoxes = displayBoxes.filter(item => item.box && item.box.baseline_offset !== undefined);
 
-    // Calculate total width and max height
-    // Also calculate average box dimensions for placeholders
-    let totalWidth = 0;
-    let maxHeight = 0;
-    let unifiedBaselineY = 0;
+    // FIRST PASS: Calculate average dimensions from actual boxes
     let totalBoxWidth = 0;
     let totalBoxHeight = 0;
     let boxCount = 0;
 
+    displayBoxes.forEach(item => {
+      if (item.box) {
+        totalBoxWidth += item.box.width;
+        totalBoxHeight += item.box.height;
+        boxCount++;
+      }
+    });
+
+    // Calculate average dimensions for placeholders
+    const avgBoxWidth = boxCount > 0 ? Math.round(totalBoxWidth / boxCount) : 40;
+    const avgBoxHeight = boxCount > 0 ? Math.round(totalBoxHeight / boxCount) : 60;
+
+    // SECOND PASS: Calculate total width and max height using correct dimensions
+    let totalWidth = 0;
+    let maxHeight = 0;
+    let unifiedBaselineY = 0;
+
     displayBoxes.forEach((item, index) => {
       const { box } = item;
 
-      // Use actual box dimensions or placeholder dimensions
+      // Use actual box dimensions or placeholder dimensions (now with correct averages)
       let boxWidth, boxHeight;
       if (box) {
         boxWidth = box.width + charPadding * 2;
         boxHeight = box.height + charPadding * 2;
-        totalBoxWidth += box.width;
-        totalBoxHeight += box.height;
-        boxCount++;
       } else {
-        // Placeholder: use average dimensions or generic size
-        boxWidth = 40; // Will be updated below if we have boxes
-        boxHeight = 60; // Will be updated below if we have boxes
+        // Placeholder: use calculated average dimensions
+        boxWidth = avgBoxWidth + charPadding * 2;
+        boxHeight = avgBoxHeight + charPadding * 2;
       }
 
       totalWidth += boxWidth;
@@ -569,22 +579,18 @@ export default function WordPreview() {
       maxHeight = Math.max(maxHeight, boxHeight);
     });
 
-    // Calculate average dimensions for placeholders
-    const avgBoxWidth = boxCount > 0 ? Math.round(totalBoxWidth / boxCount) : 40;
-    const avgBoxHeight = boxCount > 0 ? Math.round(totalBoxHeight / boxCount) : 60;
-
     // Calculate canvas height based on baseline alignment
     let canvasHeight = maxHeight;
 
     if (baselinedBoxes.length > 0) {
       // Find maximum offset above baseline (ensures no character gets cut off)
-      const maxOffsetAbove = Math.max(...baselinedBoxes.map(box => box.baseline_offset));
+      const maxOffsetAbove = Math.max(...baselinedBoxes.map(item => item.box.baseline_offset));
       unifiedBaselineY = maxOffsetAbove;
 
       // Calculate maximum space needed below baseline
-      const maxBelowBaseline = Math.max(...baselinedBoxes.map(box => {
-        const paddedHeight = box.height + charPadding * 2;
-        return paddedHeight - box.baseline_offset;
+      const maxBelowBaseline = Math.max(...baselinedBoxes.map(item => {
+        const paddedHeight = item.box.height + charPadding * 2;
+        return paddedHeight - item.box.baseline_offset;
       }));
 
       // Canvas height needs to fit both above and below baseline
