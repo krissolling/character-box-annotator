@@ -313,25 +313,18 @@ const useAnnotatorStore = create((set, get) => {
       }))
     };
 
-    // Find closest baseline and assign to box
-    const baselineInfo = get().findClosestBaseline(box.y, box.height, box.x, box.width);
-    if (baselineInfo) {
-      box.baseline_id = baselineInfo.baseline_id;
-      box.baseline_offset = baselineInfo.baseline_offset;
-    }
+    // Add the box using addBox() to ensure variantId is assigned
+    get().addBox(box);
 
-    // Add the box
+    // Clear brush state
     set((state) => {
-      const newBoxes = [...state.boxes, box];
-
       // Check if all unique characters have been annotated
-      const annotatedChars = new Set(newBoxes.map(b => b.char));
+      const annotatedChars = new Set(state.boxes.map(b => b.char));
       const allAnnotated = state.uniqueChars.every(char => annotatedChars.has(char));
 
       if (allAnnotated) {
         // All characters have been annotated - switch to pointer mode
         return {
-          boxes: newBoxes,
           isBrushBoxMode: false,
           brushStrokes: [],
           currentTool: 'pointer',
@@ -342,7 +335,7 @@ const useAnnotatorStore = create((set, get) => {
         // First search forward from current position
         let nextIndex = state.currentCharIndex + 1;
         while (nextIndex < state.uniqueChars.length) {
-          const hasBox = newBoxes.some(b => b.charIndex === nextIndex);
+          const hasBox = state.boxes.some(b => b.charIndex === nextIndex);
           if (!hasBox) break;
           nextIndex++;
         }
@@ -351,7 +344,7 @@ const useAnnotatorStore = create((set, get) => {
         if (nextIndex >= state.uniqueChars.length) {
           nextIndex = 0;
           while (nextIndex < state.currentCharIndex) {
-            const hasBox = newBoxes.some(b => b.charIndex === nextIndex);
+            const hasBox = state.boxes.some(b => b.charIndex === nextIndex);
             if (!hasBox) break;
             nextIndex++;
           }
@@ -359,7 +352,6 @@ const useAnnotatorStore = create((set, get) => {
 
         // Stay in brush mode for next character
         return {
-          boxes: newBoxes,
           isBrushBoxMode: true,
           brushStrokes: [],
           currentTool: 'brush',
