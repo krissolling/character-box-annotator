@@ -443,7 +443,7 @@ export default function WordPreview() {
     renderCanvas();
     // Trigger re-render of kerning handles after canvas is rendered
     setHandleRenderTrigger(prev => prev + 1);
-  }, [image, boxes, letterSpacing, charPadding, kerningAdjustments, baselines, angledBaselines, editedCharData, imageRotation, imageFilters, levelsAdjustment, debugClickAreas, lastClickPos]);
+  }, [image, boxes, letterSpacing, charPadding, kerningAdjustments, baselines, angledBaselines, editedCharData, imageRotation, imageFilters, levelsAdjustment, debugClickAreas, lastClickPos, text, selectedVariants, uniqueChars]);
 
   // Apply advanced color adjustments (shadows/highlights) to canvas
   const applyAdvancedAdjustments = (ctx, width, height) => {
