@@ -727,9 +727,7 @@ export default function WordPreview() {
           currentX + charPadding, yPos + charPadding, box.width, box.height // Destination rectangle
         );
 
-        ctx.restore();
-
-        // Apply erase mask if it exists (from character editing)
+        // Apply erase mask if it exists (from character editing) - MUST be before restore()
         if (originalBoxIndex !== -1 && editedCharData[originalBoxIndex]) {
           const editData = editedCharData[originalBoxIndex];
           const eraseMask = typeof editData === 'string' ? null : editData.eraseMask;
@@ -752,6 +750,8 @@ export default function WordPreview() {
             });
           }
         }
+
+        ctx.restore();
 
         // Store character position for click detection
         charPositionsRef.current.push({
