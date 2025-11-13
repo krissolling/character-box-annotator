@@ -945,12 +945,14 @@ export default function WordPreview() {
     }
   };
 
-  if (!image || boxes.length === 0) {
+  // Show empty state only if no image OR no text string
+  // If there's text but no boxes, we'll render placeholders for all characters
+  if (!image || !text || text.length === 0) {
     return (
       <div style={panelStyle}>
         <div style={{ padding: '12px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
           <p style={{ fontSize: '13px', color: '#999', fontStyle: 'italic' }}>
-            Draw character boxes to see preview
+            {!image ? 'Upload an image to get started' : 'Enter text to preview'}
           </p>
         </div>
       </div>
