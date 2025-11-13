@@ -358,6 +358,12 @@ export default function AnnotationCanvas() {
     boxes.forEach((box, index) => {
       const isSelected = selectedBox === index;
       const isHovered = hoveredBox === index && !isSelected;
+      const isOrphaned = !uniqueChars.includes(box.char); // Box char not in current string
+
+      // Skip rendering orphaned boxes (kept in storage but not shown on canvas)
+      if (isOrphaned) {
+        return;
+      }
 
       // Highlight hovered box with a fill
       if (isHovered) {

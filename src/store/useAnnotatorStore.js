@@ -121,7 +121,9 @@ const useAnnotatorStore = create((set, get) => {
   setText: (text) => {
     const uniqueChars = [...new Set(text.split(''))];
     saveText(text); // Save to localStorage
-    set({ text, uniqueChars, currentCharIndex: 0, boxes: [] });
+    // DON'T clear boxes - keep all boxes for persistence
+    // Boxes will be filtered by rendering logic to show only active ones
+    set({ text, uniqueChars, currentCharIndex: 0 });
   },
 
   // Update text without clearing boxes or other state
@@ -177,6 +179,18 @@ const useAnnotatorStore = create((set, get) => {
     return state.boxes
       .filter(box => box.charIndex === charIndex)
       .sort((a, b) => a.variantId - b.variantId);
+  },
+
+  // Get active boxes (characters in current string)
+  getActiveBoxes: () => {
+    const state = get();
+    return state.boxes.filter(box => state.uniqueChars.includes(box.char));
+  },
+
+  // Get orphaned boxes (characters NOT in current string)
+  getOrphanedBoxes: () => {
+    const state = get();
+    return state.boxes.filter(box => !state.uniqueChars.includes(box.char));
   },
 
   setSelectedBox: (index) => set({ selectedBox: index }),
