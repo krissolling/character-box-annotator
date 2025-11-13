@@ -988,7 +988,8 @@ export default function WordPreview() {
         // Draw character label
         ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
         ctx.font = '12px monospace';
-        ctx.fillText(`[${index}] ${pos.box.char}`, pos.x + 2, pos.y + 12);
+        const label = pos.box ? `[${index}] ${pos.box.char}` : `[${index}] placeholder`;
+        ctx.fillText(label, pos.x + 2, pos.y + 12);
       });
 
       ctx.setLineDash([]);
