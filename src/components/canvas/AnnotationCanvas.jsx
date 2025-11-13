@@ -1492,27 +1492,21 @@ export default function AnnotationCanvas() {
     const delta = e.deltaY > 0 ? -0.1 : 0.1;
     const newZoom = Math.max(minZoom, Math.min(4.0, zoomLevel + delta));
 
-    // Zoom toward cursor position
+    // Zoom toward cursor position (react-zoom-pan-pinch approach)
     if (canvasRef.current && newZoom !== zoomLevel) {
       const canvas = canvasRef.current;
       const rect = canvas.getBoundingClientRect();
 
-      // Get mouse position relative to canvas
-      // Note: rect already includes the CSS transform (panOffset), so we use it directly
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
+      // Get mouse position relative to canvas in image coordinates
+      // getBoundingClientRect() returns the transformed position (includes scale and translate)
+      const mouseX = (e.clientX - rect.left) / zoomLevel;
+      const mouseY = (e.clientY - rect.top) / zoomLevel;
 
-      // Get mouse position in image coordinates (before zoom)
-      // Don't subtract panOffset here - rect.left/top already accounts for CSS transform
-      const imageX = mouseX / zoomLevel;
-      const imageY = mouseY / zoomLevel;
-
-      // Calculate new pan offset to keep mouse position fixed in the viewport
-      // We want: mouseX (viewport) = panOffset + imageX * newZoom (canvas position)
-      // Therefore: newPanOffset = mouseX - imageX * newZoom + current offset adjustment
-      const zoomRatio = newZoom / zoomLevel;
-      const newPanX = panOffset.x + mouseX * (1 - zoomRatio);
-      const newPanY = panOffset.y + mouseY * (1 - zoomRatio);
+      // Calculate new position using react-zoom-pan-pinch formula:
+      // newPosition = currentPosition - mousePosition * (newScale - currentScale)
+      const scaleDifference = newZoom - zoomLevel;
+      const newPanX = panOffset.x - mouseX * scaleDifference;
+      const newPanY = panOffset.y - mouseY * scaleDifference;
 
       useAnnotatorStore.getState().setZoomLevel(newZoom);
       setPanOffset({ x: newPanX, y: newPanY });
