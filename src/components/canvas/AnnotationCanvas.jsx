@@ -1453,7 +1453,10 @@ export default function AnnotationCanvas() {
         zoomOut();
       } else if (e.key === '0') {
         e.preventDefault();
-        resetZoom();
+        if (image && containerRef.current) {
+          const containerRect = containerRef.current.getBoundingClientRect();
+          resetZoom(image.width, image.height, containerRect.width, containerRect.height);
+        }
       }
 
       // Brush size shortcuts
@@ -1533,9 +1536,6 @@ export default function AnnotationCanvas() {
           height: '100%',
           overflow: 'hidden',
           borderRadius: '8px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
           background: 'white'
         }}
       >
@@ -1565,11 +1565,12 @@ export default function AnnotationCanvas() {
           onClick={handleCanvasClick}
           onWheel={handleWheel}
           style={{
+            position: 'absolute',
             border: '2px solid #ddd',
             borderRadius: '8px',
             cursor: cursorStyle,
-            display: 'block',
-            transform: `translate(${panOffset.x}px, ${panOffset.y}px)`
+            transformOrigin: '0 0',
+            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`
           }}
         />
       </div>

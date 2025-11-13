@@ -19,6 +19,17 @@ export default function ZoomControls() {
     fitToView(image.width, image.height, containerRect.width, containerRect.height);
   };
 
+  const handleResetZoom = () => {
+    if (!image) return;
+
+    // Find the canvas container element
+    const canvas = document.querySelector('canvas');
+    if (!canvas) return;
+
+    const containerRect = canvas.parentElement.getBoundingClientRect();
+    resetZoom(image.width, image.height, containerRect.width, containerRect.height);
+  };
+
   const buttonStyle = {
     padding: '6px 12px',
     fontSize: '13px',
@@ -88,7 +99,7 @@ export default function ZoomControls() {
       </button>
 
       <button
-        onClick={resetZoom}
+        onClick={handleResetZoom}
         style={buttonStyle}
         onMouseOver={(e) => e.target.style.background = '#e0e0e0'}
         onMouseOut={(e) => e.target.style.background = '#f5f5f5'}

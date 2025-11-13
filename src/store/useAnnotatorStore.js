@@ -615,13 +615,28 @@ const useAnnotatorStore = create((set, get) => {
     return { zoomLevel: newLevel };
   }),
 
-  resetZoom: () => set({ zoomLevel: 1.0, panOffset: { x: 0, y: 0 } }),
+  resetZoom: (imageWidth, imageHeight, containerWidth, containerHeight) => {
+    // Calculate centering position at 1.0 zoom
+    const scaledWidth = imageWidth * 1.0;
+    const scaledHeight = imageHeight * 1.0;
+    const centerX = (containerWidth - scaledWidth) / 2;
+    const centerY = (containerHeight - scaledHeight) / 2;
+    set({ zoomLevel: 1.0, panOffset: { x: centerX, y: centerY } });
+  },
 
   fitToView: (imageWidth, imageHeight, containerWidth, containerHeight) => {
     const zoomToFitWidth = containerWidth / imageWidth;
     const zoomToFitHeight = containerHeight / imageHeight;
     const fitZoom = Math.min(zoomToFitWidth, zoomToFitHeight);
-    set({ zoomLevel: fitZoom, panOffset: { x: 0, y: 0 } });
+
+    // Calculate centering position (react-zoom-pan-pinch approach)
+    // After scaling, the displayed size is: imageWidth * fitZoom x imageHeight * fitZoom
+    const scaledWidth = imageWidth * fitZoom;
+    const scaledHeight = imageHeight * fitZoom;
+    const centerX = (containerWidth - scaledWidth) / 2;
+    const centerY = (containerHeight - scaledHeight) / 2;
+
+    set({ zoomLevel: fitZoom, panOffset: { x: centerX, y: centerY } });
   },
 
   setPanOffset: (offset) => set({ panOffset: offset }),
