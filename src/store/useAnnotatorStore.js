@@ -255,7 +255,7 @@ const useAnnotatorStore = create((set, get) => {
     isAngledBaselineMode: false,
   }),
 
-  setBrushBoxSize: (size) => set({ brushBoxSize: Math.max(10, Math.min(100, size)) }),
+  setBrushBoxSize: (size) => set({ brushBoxSize: Math.max(10, Math.min(400, size)) }),
 
   addBrushStroke: (stroke) => set((state) => ({
     brushStrokes: [...state.brushStrokes, stroke],

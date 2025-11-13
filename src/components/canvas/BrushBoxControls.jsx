@@ -37,7 +37,7 @@ export default function BrushBoxControls() {
           <input
             type="range"
             min="10"
-            max="100"
+            max="400"
             step="5"
             value={brushBoxSize}
             onChange={(e) => setBrushBoxSize(parseInt(e.target.value))}
