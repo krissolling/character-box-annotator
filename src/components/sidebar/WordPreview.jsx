@@ -511,7 +511,21 @@ export default function WordPreview() {
       const selectedVariantId = selectedVariants[charIndex] || 0;
 
       // Find the box with matching charIndex and variantId
-      return boxes.find(box => box.charIndex === charIndex && box.variantId === selectedVariantId);
+      const foundBox = boxes.find(box => box.charIndex === charIndex && box.variantId === selectedVariantId);
+
+      // DEBUG: Log brush mask info
+      if (foundBox && foundBox.brushMask) {
+        console.log(`Found box with brushMask for char "${char}":`, {
+          char: foundBox.char,
+          charIndex: foundBox.charIndex,
+          variantId: foundBox.variantId,
+          hasBrushMask: !!foundBox.brushMask,
+          brushMaskLength: foundBox.brushMask?.length,
+          boxDimensions: { x: foundBox.x, y: foundBox.y, w: foundBox.width, h: foundBox.height }
+        });
+      }
+
+      return foundBox;
     }).filter(box => box !== undefined); // Filter out characters that don't have boxes yet
 
     // Clear character positions for click detection
@@ -686,6 +700,7 @@ export default function WordPreview() {
         // Always draw from original with masks applied dynamically (no pre-rendered PNG)
         // Apply brush mask if it exists (for clipping)
         if (box.brushMask && box.brushMask.length > 0) {
+          console.log(`Rendering brushMask for char "${box.char}":`, box.brushMask.length, 'strokes');
           // Create clipping path from brush strokes
           ctx.beginPath();
           box.brushMask.forEach(stroke => {
