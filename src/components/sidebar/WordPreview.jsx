@@ -638,27 +638,39 @@ export default function WordPreview() {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, totalWidth, canvasHeight);
 
-    // Draw baseline for visualization (optional)
-    if (unifiedBaselineY > 0) {
+    // Draw baseline for visualization (only in debug mode)
+    if (debugClickAreas && unifiedBaselineY > 0) {
       ctx.save();
-      ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = hasAngledBaseline ? 'rgba(34, 197, 94, 0.8)' : 'rgba(59, 130, 246, 0.8)';
+      ctx.lineWidth = 2;
       ctx.setLineDash([5, 5]);
       ctx.beginPath();
 
       if (hasAngledBaseline) {
-        // Draw angled baseline
+        // Draw angled baseline (green)
         const startY = canvasPadding + unifiedBaselineY;
         const endY = startY + (totalWidth - canvasPadding * 2) * baselineSlope;
         ctx.moveTo(canvasPadding, startY);
         ctx.lineTo(totalWidth - canvasPadding, endY);
+
+        // Add label
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.9)';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText('ANGLED BASELINE', canvasPadding + 5, startY - 5);
       } else {
-        // Draw horizontal baseline
-        ctx.moveTo(canvasPadding, canvasPadding + unifiedBaselineY);
-        ctx.lineTo(totalWidth - canvasPadding, canvasPadding + unifiedBaselineY);
+        // Draw horizontal baseline (blue)
+        const y = canvasPadding + unifiedBaselineY;
+        ctx.moveTo(canvasPadding, y);
+        ctx.lineTo(totalWidth - canvasPadding, y);
+
+        // Add label
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText('BASELINE', canvasPadding + 5, y - 5);
       }
 
-      ctx.stroke();
       ctx.restore();
     }
 
@@ -983,12 +995,25 @@ export default function WordPreview() {
       ctx.setLineDash([5, 5]);
 
       charPositionsRef.current.forEach((pos, index) => {
+        // Color-code boxes based on baseline association
+        if (pos.box && pos.box.baseline_id !== undefined) {
+          ctx.strokeStyle = 'rgba(59, 130, 246, 0.7)'; // Blue for baselined
+        } else {
+          ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)'; // Red for non-baselined
+        }
         ctx.strokeRect(pos.x, pos.y, pos.width, pos.height);
 
-        // Draw character label
+        // Draw character label with baseline info
         ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
         ctx.font = '12px monospace';
-        const label = pos.box ? `[${index}] ${pos.box.char}` : `[${index}] placeholder`;
+        let label = pos.box ? `[${index}] ${pos.box.char}` : `[${index}] placeholder`;
+
+        // Add baseline info if present
+        if (pos.box && pos.box.baseline_id !== undefined) {
+          label += ` B:${pos.box.baseline_id}`;
+          ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
+        }
+
         ctx.fillText(label, pos.x + 2, pos.y + 12);
       });
 
