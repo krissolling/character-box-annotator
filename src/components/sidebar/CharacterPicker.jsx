@@ -70,8 +70,8 @@ export default function CharacterPicker() {
         // If no characters removed, keep all boxes
       }
 
-      // Update text
-      useAnnotatorStore.getState().setText(newText);
+      // Update text only (preserve boxes and kerning)
+      useAnnotatorStore.getState().updateTextOnly(newText);
     }
   };
 

@@ -124,6 +124,13 @@ const useAnnotatorStore = create((set, get) => {
     set({ text, uniqueChars, currentCharIndex: 0, boxes: [] });
   },
 
+  // Update text without clearing boxes or other state
+  updateTextOnly: (text) => {
+    const uniqueChars = [...new Set(text.split(''))];
+    saveText(text); // Save to localStorage
+    set({ text, uniqueChars, currentCharIndex: 0 });
+  },
+
   addBox: (box) => set((state) => {
     // Auto-assign variantId based on existing boxes for this charIndex
     const existingVariants = state.boxes.filter(b => b.charIndex === box.charIndex);
