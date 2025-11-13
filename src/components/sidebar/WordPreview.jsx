@@ -496,7 +496,10 @@ export default function WordPreview() {
 
   const renderCanvas = () => {
     const canvas = canvasRef.current;
-    if (!canvas || !image || boxes.length === 0) return;
+    if (!canvas || !image) return;
+
+    // Allow rendering with no boxes - will show placeholders for all characters
+    if (!text || text.length === 0) return;
 
     // Use rotated image if available, otherwise use original
     const sourceImage = rotatedImageRef.current || image;
@@ -770,17 +773,18 @@ export default function WordPreview() {
           maskCanvas.height = boxHeight;
           const maskCtx = maskCanvas.getContext('2d');
 
-          // Draw brush strokes with proper width on mask canvas
+          // Build a combined path from all brush strokes
+          maskCtx.fillStyle = 'black';
+          maskCtx.strokeStyle = 'black';
+
+          // First, stroke each path with proper width to create the outline
           box.brushMask.forEach(stroke => {
-            maskCtx.strokeStyle = 'black';
-            maskCtx.fillStyle = 'black';
             maskCtx.lineWidth = stroke.size;
             maskCtx.lineCap = 'round';
             maskCtx.lineJoin = 'round';
 
             maskCtx.beginPath();
             stroke.points.forEach((point, i) => {
-              // Convert from absolute image coordinates to box-relative coordinates
               const boxRelativeX = point.x - box.x;
               const boxRelativeY = point.y - box.y;
               const x = charPadding + boxRelativeX;
@@ -793,7 +797,7 @@ export default function WordPreview() {
             });
             maskCtx.stroke();
 
-            // Also add circles at each point to ensure full coverage
+            // Add circles at each point for full coverage
             stroke.points.forEach(point => {
               const boxRelativeX = point.x - box.x;
               const boxRelativeY = point.y - box.y;
@@ -804,6 +808,26 @@ export default function WordPreview() {
               maskCtx.fill();
             });
           });
+
+          // Now create a unified path from all strokes and fill the interior
+          maskCtx.beginPath();
+          box.brushMask.forEach(stroke => {
+            if (stroke.points.length > 0) {
+              const firstPoint = stroke.points[0];
+              const boxRelativeX = firstPoint.x - box.x;
+              const boxRelativeY = firstPoint.y - box.y;
+              maskCtx.moveTo(charPadding + boxRelativeX, charPadding + boxRelativeY);
+
+              stroke.points.slice(1).forEach(point => {
+                const boxRelativeX = point.x - box.x;
+                const boxRelativeY = point.y - box.y;
+                maskCtx.lineTo(charPadding + boxRelativeX, charPadding + boxRelativeY);
+              });
+            }
+          });
+          // Close the path and fill interior using nonzero winding rule
+          maskCtx.closePath();
+          maskCtx.fill('nonzero');
 
           // Use temp canvas to combine image with mask
           const tempCanvas = document.createElement('canvas');
