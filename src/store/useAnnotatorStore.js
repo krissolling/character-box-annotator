@@ -477,6 +477,14 @@ const useAnnotatorStore = create((set, get) => {
 
   removeBaseline: (id) => set((state) => ({
     baselines: state.baselines.filter((b) => b.id !== id),
+    // Clear baseline association from any boxes that used this baseline
+    boxes: state.boxes.map(box => {
+      if (box.baseline_id === id) {
+        const { baseline_id, baseline_offset, ...boxWithoutBaseline } = box;
+        return boxWithoutBaseline;
+      }
+      return box;
+    })
   })),
 
   cancelBaseline: () => set({
@@ -536,6 +544,14 @@ const useAnnotatorStore = create((set, get) => {
 
   removeAngledBaseline: (id) => set((state) => ({
     angledBaselines: state.angledBaselines.filter((b) => b.id !== id),
+    // Clear baseline association from any boxes that used this baseline
+    boxes: state.boxes.map(box => {
+      if (box.baseline_id === id) {
+        const { baseline_id, baseline_offset, ...boxWithoutBaseline } = box;
+        return boxWithoutBaseline;
+      }
+      return box;
+    })
   })),
 
   cancelAngledBaseline: () => set({
