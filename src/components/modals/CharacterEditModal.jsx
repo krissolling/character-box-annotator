@@ -85,12 +85,84 @@ export default function CharacterEditModal() {
 
       ctx.save();
 
-      // Apply brush mask if it exists (from the annotation phase)
+      // Draw the FULL character crop first (no clipping) so user can see what's underneath
+      ctx.drawImage(
+        image,
+        box.x, box.y, box.width, box.height,
+        PADDING * scale, PADDING * scale, box.width * scale, box.height * scale
+      );
+
+      // If brush mask exists, draw red overlay on masked areas to show what's kept
       if (box.brushMask && box.brushMask.length > 0) {
+        // Create offscreen canvas for mask
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = canvas.width;
+        maskCanvas.height = canvas.height;
+        const maskCtx = maskCanvas.getContext('2d');
+
+        // Draw mask shape
+        maskCtx.fillStyle = 'black';
+        maskCtx.strokeStyle = 'black';
+
+        // Stroke each path with proper width
+        box.brushMask.forEach(stroke => {
+          maskCtx.lineWidth = stroke.size * scale;
+          maskCtx.lineCap = 'round';
+          maskCtx.lineJoin = 'round';
+
+          maskCtx.beginPath();
+          stroke.points.forEach((point, i) => {
+            const boxRelativeX = point.x - box.x;
+            const boxRelativeY = point.y - box.y;
+            const x = (PADDING + boxRelativeX) * scale;
+            const y = (PADDING + boxRelativeY) * scale;
+            if (i === 0) {
+              maskCtx.moveTo(x, y);
+            } else {
+              maskCtx.lineTo(x, y);
+            }
+          });
+          maskCtx.stroke();
+
+          // Add circles at each point
+          stroke.points.forEach(point => {
+            const boxRelativeX = point.x - box.x;
+            const boxRelativeY = point.y - box.y;
+            const x = (PADDING + boxRelativeX) * scale;
+            const y = (PADDING + boxRelativeY) * scale;
+            maskCtx.beginPath();
+            maskCtx.arc(x, y, (stroke.size * scale) / 2, 0, Math.PI * 2);
+            maskCtx.fill();
+          });
+        });
+
+        // Fill interior
+        maskCtx.beginPath();
+        box.brushMask.forEach(stroke => {
+          if (stroke.points.length > 0) {
+            const firstPoint = stroke.points[0];
+            const boxRelativeX = firstPoint.x - box.x;
+            const boxRelativeY = firstPoint.y - box.y;
+            maskCtx.moveTo((PADDING + boxRelativeX) * scale, (PADDING + boxRelativeY) * scale);
+
+            stroke.points.slice(1).forEach(point => {
+              const boxRelativeX = point.x - box.x;
+              const boxRelativeY = point.y - box.y;
+              maskCtx.lineTo((PADDING + boxRelativeX) * scale, (PADDING + boxRelativeY) * scale);
+            });
+          }
+        });
+        maskCtx.closePath();
+        maskCtx.fill('nonzero');
+
+        // Draw red overlay on masked areas (20% opacity) using mask
+        ctx.save();
+        ctx.globalAlpha = 0.2;
+
+        // Clip to mask shape
         ctx.beginPath();
         box.brushMask.forEach(stroke => {
           stroke.points.forEach((point, i) => {
-            // Convert from absolute image coordinates to box-relative coordinates
             const boxRelativeX = point.x - box.x;
             const boxRelativeY = point.y - box.y;
             const x = (PADDING + boxRelativeX) * scale;
@@ -103,29 +175,16 @@ export default function CharacterEditModal() {
           });
         });
 
-        // Create rounded caps for strokes
-        box.brushMask.forEach(stroke => {
-          const radius = (stroke.size / 2) * scale;
-          stroke.points.forEach(point => {
-            // Convert from absolute image coordinates to box-relative coordinates
-            const boxRelativeX = point.x - box.x;
-            const boxRelativeY = point.y - box.y;
-            const x = (PADDING + boxRelativeX) * scale;
-            const y = (PADDING + boxRelativeY) * scale;
-            ctx.moveTo(x + radius, y);
-            ctx.arc(x, y, radius, 0, Math.PI * 2);
-          });
-        });
-
+        // Close and clip
+        ctx.closePath();
         ctx.clip();
-      }
 
-      // Draw the character crop from ORIGINAL image
-      ctx.drawImage(
-        image,
-        box.x, box.y, box.width, box.height,
-        PADDING * scale, PADDING * scale, box.width * scale, box.height * scale
-      );
+        // Fill with red
+        ctx.fillStyle = '#ff0000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.restore();
+      }
 
       ctx.restore();
 
