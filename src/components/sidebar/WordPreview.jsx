@@ -861,15 +861,19 @@ export default function WordPreview() {
           tempCtx.globalCompositeOperation = 'destination-in';
           tempCtx.drawImage(maskCanvas, 0, 0);
 
-          // Draw the masked result to main canvas
+          // Draw the masked result to main canvas with multiply blend for black text
+          ctx.globalCompositeOperation = 'multiply';
           ctx.drawImage(tempCanvas, 0, 0, boxWidth, boxHeight, currentX, yPos, boxWidth, boxHeight);
+          ctx.globalCompositeOperation = 'source-over';
         } else {
-          // No brush mask - draw the original image normally
+          // No brush mask - draw the original image with multiply blend for black text
+          ctx.globalCompositeOperation = 'multiply';
           ctx.drawImage(
             sourceImage,
             box.x, box.y, box.width, box.height, // Source rectangle
             currentX + charPadding, yPos + charPadding, box.width, box.height // Destination rectangle
           );
+          ctx.globalCompositeOperation = 'source-over';
         }
 
         // Apply erase mask if it exists (from character editing) - MUST be before restore()
