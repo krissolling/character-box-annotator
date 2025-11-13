@@ -407,12 +407,18 @@ export default function WordPreview() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !image || boxes.length === 0) {
+    if (!canvas || !image) {
       // Clear canvas if no data
       if (canvas) {
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
+      return;
+    }
+
+    // Allow rendering even with no boxes - we'll show placeholders
+    if (!text || text.length === 0) {
+      // No text to render
       return;
     }
 

@@ -682,8 +682,8 @@ export default function AnnotationCanvas() {
         const centerX = (baseline.start.x + baseline.end.x) / 2;
         const centerY = (baseline.start.y + baseline.end.y) / 2;
 
-        // Extend line to canvas edges
-        const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, displayWidth, displayHeight);
+        // Extend line to canvas edges (use image dimensions, not display dimensions)
+        const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, image.width, image.height);
         const extendedStart = extended.start;
         const extendedEnd = extended.end;
 
@@ -718,8 +718,8 @@ export default function AnnotationCanvas() {
           const centerX = (angledBaselineLineStart.x + angledBaselineLineEnd.x) / 2;
           const centerY = (angledBaselineLineStart.y + angledBaselineLineEnd.y) / 2;
 
-          // Extend the line to canvas edges
-          const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, displayWidth, displayHeight);
+          // Extend the line to canvas edges (use image dimensions, not display dimensions)
+          const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, image.width, image.height);
           const extendedStart = extended.start;
           const extendedEnd = extended.end;
 
@@ -743,13 +743,13 @@ export default function AnnotationCanvas() {
           const lastBaseline = angledBaselines[angledBaselines.length - 1];
           const angleRad = lastBaseline.angle * (Math.PI / 180);
 
-          // Extend to canvas edges
+          // Extend to canvas edges (use image dimensions, not display dimensions)
           const extended = extendLineToCanvasEdges(
             tempAngledBaselinePos.x,
             tempAngledBaselinePos.y,
             angleRad,
-            displayWidth,
-            displayHeight
+            image.width,
+            image.height
           );
           const start = extended.start;
           const end = extended.end;
