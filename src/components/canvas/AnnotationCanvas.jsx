@@ -1489,16 +1489,21 @@ export default function AnnotationCanvas() {
       const rect = canvas.getBoundingClientRect();
 
       // Get mouse position relative to canvas
+      // Note: rect already includes the CSS transform (panOffset), so we use it directly
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
       // Get mouse position in image coordinates (before zoom)
-      const imageX = (mouseX - panOffset.x) / zoomLevel;
-      const imageY = (mouseY - panOffset.y) / zoomLevel;
+      // Don't subtract panOffset here - rect.left/top already accounts for CSS transform
+      const imageX = mouseX / zoomLevel;
+      const imageY = mouseY / zoomLevel;
 
-      // Calculate new pan offset to keep mouse position fixed
-      const newPanX = mouseX - imageX * newZoom;
-      const newPanY = mouseY - imageY * newZoom;
+      // Calculate new pan offset to keep mouse position fixed in the viewport
+      // We want: mouseX (viewport) = panOffset + imageX * newZoom (canvas position)
+      // Therefore: newPanOffset = mouseX - imageX * newZoom + current offset adjustment
+      const zoomRatio = newZoom / zoomLevel;
+      const newPanX = panOffset.x + mouseX * (1 - zoomRatio);
+      const newPanY = panOffset.y + mouseY * (1 - zoomRatio);
 
       useAnnotatorStore.getState().setZoomLevel(newZoom);
       setPanOffset({ x: newPanX, y: newPanY });
