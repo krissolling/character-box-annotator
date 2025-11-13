@@ -268,6 +268,68 @@ export default function AnnotationCanvas() {
     const displayWidth = image.width * zoomLevel;
     const displayHeight = image.height * zoomLevel;
 
+    // Helper function to extend line to canvas edges
+    const extendLineToCanvasEdges = (centerX, centerY, angleRad, canvasWidth, canvasHeight) => {
+      const cos = Math.cos(angleRad);
+      const sin = Math.sin(angleRad);
+
+      // Calculate intersections with all 4 edges
+      const intersections = [];
+
+      // Left edge (x = 0)
+      if (cos !== 0) {
+        const t = -centerX / cos;
+        const y = centerY + t * sin;
+        if (y >= 0 && y <= canvasHeight) {
+          intersections.push({ x: 0, y, t });
+        }
+      }
+
+      // Right edge (x = canvasWidth)
+      if (cos !== 0) {
+        const t = (canvasWidth - centerX) / cos;
+        const y = centerY + t * sin;
+        if (y >= 0 && y <= canvasHeight) {
+          intersections.push({ x: canvasWidth, y, t });
+        }
+      }
+
+      // Top edge (y = 0)
+      if (sin !== 0) {
+        const t = -centerY / sin;
+        const x = centerX + t * cos;
+        if (x >= 0 && x <= canvasWidth) {
+          intersections.push({ x, y: 0, t });
+        }
+      }
+
+      // Bottom edge (y = canvasHeight)
+      if (sin !== 0) {
+        const t = (canvasHeight - centerY) / sin;
+        const x = centerX + t * cos;
+        if (x >= 0 && x <= canvasHeight) {
+          intersections.push({ x, y: canvasHeight, t });
+        }
+      }
+
+      // Sort by parameter t (distance along line from center)
+      intersections.sort((a, b) => a.t - b.t);
+
+      // Return the two endpoints (one in each direction from center)
+      if (intersections.length >= 2) {
+        return {
+          start: { x: intersections[0].x, y: intersections[0].y },
+          end: { x: intersections[intersections.length - 1].x, y: intersections[intersections.length - 1].y }
+        };
+      }
+
+      // Fallback to original 2000px if something goes wrong
+      return {
+        start: { x: centerX - cos * 1000, y: centerY - sin * 1000 },
+        end: { x: centerX + cos * 1000, y: centerY + sin * 1000 }
+      };
+    };
+
     canvas.width = displayWidth * dpr;
     canvas.height = displayHeight * dpr;
     canvas.style.width = `${displayWidth}px`;
@@ -620,19 +682,10 @@ export default function AnnotationCanvas() {
         const centerX = (baseline.start.x + baseline.end.x) / 2;
         const centerY = (baseline.start.y + baseline.end.y) / 2;
 
-        // Extend line to cover entire canvas (2000px should be enough)
-        const lineLength = 2000;
-        const halfLength = lineLength / 2;
-
-        const extendedStart = {
-          x: centerX - Math.cos(angleRad) * halfLength,
-          y: centerY - Math.sin(angleRad) * halfLength,
-        };
-
-        const extendedEnd = {
-          x: centerX + Math.cos(angleRad) * halfLength,
-          y: centerY + Math.sin(angleRad) * halfLength,
-        };
+        // Extend line to canvas edges
+        const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, displayWidth, displayHeight);
+        const extendedStart = extended.start;
+        const extendedEnd = extended.end;
 
         ctx.strokeStyle = baseline.color;
         ctx.lineWidth = 2;
@@ -665,19 +718,10 @@ export default function AnnotationCanvas() {
           const centerX = (angledBaselineLineStart.x + angledBaselineLineEnd.x) / 2;
           const centerY = (angledBaselineLineStart.y + angledBaselineLineEnd.y) / 2;
 
-          // Extend the line across the image
-          const lineLength = 2000;
-          const halfLength = lineLength / 2;
-
-          const extendedStart = {
-            x: centerX - Math.cos(angleRad) * halfLength,
-            y: centerY - Math.sin(angleRad) * halfLength,
-          };
-
-          const extendedEnd = {
-            x: centerX + Math.cos(angleRad) * halfLength,
-            y: centerY + Math.sin(angleRad) * halfLength,
-          };
+          // Extend the line to canvas edges
+          const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, displayWidth, displayHeight);
+          const extendedStart = extended.start;
+          const extendedEnd = extended.end;
 
           // Draw extended line
           ctx.strokeStyle = '#FF9800';
@@ -698,18 +742,17 @@ export default function AnnotationCanvas() {
         else if (angledBaselines.length > 0 && tempAngledBaselinePos) {
           const lastBaseline = angledBaselines[angledBaselines.length - 1];
           const angleRad = lastBaseline.angle * (Math.PI / 180);
-          const lineLength = 2000;
-          const halfLength = lineLength / 2;
 
-          const start = {
-            x: tempAngledBaselinePos.x - Math.cos(angleRad) * halfLength,
-            y: tempAngledBaselinePos.y - Math.sin(angleRad) * halfLength,
-          };
-
-          const end = {
-            x: tempAngledBaselinePos.x + Math.cos(angleRad) * halfLength,
-            y: tempAngledBaselinePos.y + Math.sin(angleRad) * halfLength,
-          };
+          // Extend to canvas edges
+          const extended = extendLineToCanvasEdges(
+            tempAngledBaselinePos.x,
+            tempAngledBaselinePos.y,
+            angleRad,
+            displayWidth,
+            displayHeight
+          );
+          const start = extended.start;
+          const end = extended.end;
 
           ctx.strokeStyle = '#FF9800';
           ctx.lineWidth = 3;
@@ -1208,19 +1251,52 @@ export default function AnnotationCanvas() {
         const centerX = (angledBaselineLineStart.x + angledBaselineLineEnd.x) / 2;
         const centerY = (angledBaselineLineStart.y + angledBaselineLineEnd.y) / 2;
 
-        // Extend the line across the image
-        const lineLength = 2000;
-        const halfLength = lineLength / 2;
+        // Extend the line to canvas edges
+        const canvasWidth = image.width;
+        const canvasHeight = image.height;
 
-        const extendedStart = {
-          x: centerX - Math.cos(angleRad) * halfLength,
-          y: centerY - Math.sin(angleRad) * halfLength,
-        };
+        // Calculate intersections with canvas edges
+        const cos = Math.cos(angleRad);
+        const sin = Math.sin(angleRad);
+        const intersections = [];
 
-        const extendedEnd = {
-          x: centerX + Math.cos(angleRad) * halfLength,
-          y: centerY + Math.sin(angleRad) * halfLength,
-        };
+        // Left edge (x = 0)
+        if (cos !== 0) {
+          const t = -centerX / cos;
+          const y = centerY + t * sin;
+          if (y >= 0 && y <= canvasHeight) intersections.push({ x: 0, y, t });
+        }
+
+        // Right edge (x = canvasWidth)
+        if (cos !== 0) {
+          const t = (canvasWidth - centerX) / cos;
+          const y = centerY + t * sin;
+          if (y >= 0 && y <= canvasHeight) intersections.push({ x: canvasWidth, y, t });
+        }
+
+        // Top edge (y = 0)
+        if (sin !== 0) {
+          const t = -centerY / sin;
+          const x = centerX + t * cos;
+          if (x >= 0 && x <= canvasWidth) intersections.push({ x, y: 0, t });
+        }
+
+        // Bottom edge (y = canvasHeight)
+        if (sin !== 0) {
+          const t = (canvasHeight - centerY) / sin;
+          const x = centerX + t * cos;
+          if (x >= 0 && x <= canvasHeight) intersections.push({ x, y: canvasHeight, t });
+        }
+
+        intersections.sort((a, b) => a.t - b.t);
+
+        const extendedStart = intersections.length >= 2
+          ? { x: intersections[0].x, y: intersections[0].y }
+          : { x: centerX - cos * 1000, y: centerY - sin * 1000 };
+
+        const extendedEnd = intersections.length >= 2
+          ? { x: intersections[intersections.length - 1].x, y: intersections[intersections.length - 1].y }
+          : { x: centerX + cos * 1000, y: centerY + sin * 1000 };
 
         addAngledBaseline(extendedStart, extendedEnd, angleDeg);
         return;
@@ -1231,20 +1307,50 @@ export default function AnnotationCanvas() {
         const lastBaseline = angledBaselines[angledBaselines.length - 1];
         const angleRad = lastBaseline.angle * (Math.PI / 180);
 
-        // Create a line segment at the stored angle, centered at tempAngledBaselinePos
-        // Make it long enough to span the entire image
-        const lineLength = 2000;
-        const halfLength = lineLength / 2;
+        // Extend to canvas edges
+        const canvasWidth = image.width;
+        const canvasHeight = image.height;
+        const cos = Math.cos(angleRad);
+        const sin = Math.sin(angleRad);
+        const intersections = [];
 
-        const start = {
-          x: tempAngledBaselinePos.x - Math.cos(angleRad) * halfLength,
-          y: tempAngledBaselinePos.y - Math.sin(angleRad) * halfLength,
-        };
+        // Left edge (x = 0)
+        if (cos !== 0) {
+          const t = -tempAngledBaselinePos.x / cos;
+          const y = tempAngledBaselinePos.y + t * sin;
+          if (y >= 0 && y <= canvasHeight) intersections.push({ x: 0, y, t });
+        }
 
-        const end = {
-          x: tempAngledBaselinePos.x + Math.cos(angleRad) * halfLength,
-          y: tempAngledBaselinePos.y + Math.sin(angleRad) * halfLength,
-        };
+        // Right edge (x = canvasWidth)
+        if (cos !== 0) {
+          const t = (canvasWidth - tempAngledBaselinePos.x) / cos;
+          const y = tempAngledBaselinePos.y + t * sin;
+          if (y >= 0 && y <= canvasHeight) intersections.push({ x: canvasWidth, y, t });
+        }
+
+        // Top edge (y = 0)
+        if (sin !== 0) {
+          const t = -tempAngledBaselinePos.y / sin;
+          const x = tempAngledBaselinePos.x + t * cos;
+          if (x >= 0 && x <= canvasWidth) intersections.push({ x, y: 0, t });
+        }
+
+        // Bottom edge (y = canvasHeight)
+        if (sin !== 0) {
+          const t = (canvasHeight - tempAngledBaselinePos.y) / sin;
+          const x = tempAngledBaselinePos.x + t * cos;
+          if (x >= 0 && x <= canvasHeight) intersections.push({ x, y: canvasHeight, t });
+        }
+
+        intersections.sort((a, b) => a.t - b.t);
+
+        const start = intersections.length >= 2
+          ? { x: intersections[0].x, y: intersections[0].y }
+          : { x: tempAngledBaselinePos.x - cos * 1000, y: tempAngledBaselinePos.y - sin * 1000 };
+
+        const end = intersections.length >= 2
+          ? { x: intersections[intersections.length - 1].x, y: intersections[intersections.length - 1].y }
+          : { x: tempAngledBaselinePos.x + cos * 1000, y: tempAngledBaselinePos.y + sin * 1000 };
 
         addAngledBaseline(start, end, lastBaseline.angle);
         return;
