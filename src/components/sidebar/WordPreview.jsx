@@ -758,46 +758,77 @@ export default function WordPreview() {
         // Always draw from original with masks applied dynamically (no pre-rendered PNG)
         // Apply brush mask if it exists (for clipping)
         if (box.brushMask && box.brushMask.length > 0) {
-          // Create clipping path from brush strokes
-          ctx.beginPath();
+          // Create mask using offscreen canvas to properly handle stroke width
+          const maskCanvas = document.createElement('canvas');
+          maskCanvas.width = boxWidth;
+          maskCanvas.height = boxHeight;
+          const maskCtx = maskCanvas.getContext('2d');
+
+          // Draw brush strokes with proper width on mask canvas
           box.brushMask.forEach(stroke => {
+            maskCtx.strokeStyle = 'black';
+            maskCtx.fillStyle = 'black';
+            maskCtx.lineWidth = stroke.size;
+            maskCtx.lineCap = 'round';
+            maskCtx.lineJoin = 'round';
+
+            maskCtx.beginPath();
             stroke.points.forEach((point, i) => {
               // Convert from absolute image coordinates to box-relative coordinates
               const boxRelativeX = point.x - box.x;
               const boxRelativeY = point.y - box.y;
-              const x = currentX + charPadding + boxRelativeX;
-              const y = yPos + charPadding + boxRelativeY;
+              const x = charPadding + boxRelativeX;
+              const y = charPadding + boxRelativeY;
               if (i === 0) {
-                ctx.moveTo(x, y);
+                maskCtx.moveTo(x, y);
               } else {
-                ctx.lineTo(x, y);
+                maskCtx.lineTo(x, y);
               }
             });
-          });
+            maskCtx.stroke();
 
-          // Create rounded caps for strokes
-          box.brushMask.forEach(stroke => {
-            const radius = stroke.size / 2;
+            // Also add circles at each point to ensure full coverage
             stroke.points.forEach(point => {
-              // Convert from absolute image coordinates to box-relative coordinates
               const boxRelativeX = point.x - box.x;
               const boxRelativeY = point.y - box.y;
-              const x = currentX + charPadding + boxRelativeX;
-              const y = yPos + charPadding + boxRelativeY;
-              ctx.moveTo(x + radius, y);
-              ctx.arc(x, y, radius, 0, Math.PI * 2);
+              const x = charPadding + boxRelativeX;
+              const y = charPadding + boxRelativeY;
+              maskCtx.beginPath();
+              maskCtx.arc(x, y, stroke.size / 2, 0, Math.PI * 2);
+              maskCtx.fill();
             });
           });
 
-          ctx.clip();
-        }
+          // Use temp canvas to combine image with mask
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = boxWidth;
+          tempCanvas.height = boxHeight;
+          const tempCtx = tempCanvas.getContext('2d');
 
-        // Draw the original image
-        ctx.drawImage(
-          sourceImage,
-          box.x, box.y, box.width, box.height, // Source rectangle
-          currentX + charPadding, yPos + charPadding, box.width, box.height // Destination rectangle
-        );
+          // Apply filters to temp canvas (same as main canvas)
+          tempCtx.filter = ctx.filter;
+
+          // Draw the character to temp canvas
+          tempCtx.drawImage(
+            sourceImage,
+            box.x, box.y, box.width, box.height,
+            charPadding, charPadding, box.width, box.height
+          );
+
+          // Apply mask using destination-in (keeps only pixels where mask is opaque)
+          tempCtx.globalCompositeOperation = 'destination-in';
+          tempCtx.drawImage(maskCanvas, 0, 0);
+
+          // Draw the masked result to main canvas
+          ctx.drawImage(tempCanvas, 0, 0, boxWidth, boxHeight, currentX, yPos, boxWidth, boxHeight);
+        } else {
+          // No brush mask - draw the original image normally
+          ctx.drawImage(
+            sourceImage,
+            box.x, box.y, box.width, box.height, // Source rectangle
+            currentX + charPadding, yPos + charPadding, box.width, box.height // Destination rectangle
+          );
+        }
 
         // Apply erase mask if it exists (from character editing) - MUST be before restore()
         if (originalBoxIndex !== -1 && editedCharData[originalBoxIndex]) {
