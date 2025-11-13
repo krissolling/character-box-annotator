@@ -6,6 +6,7 @@ import TypographyControls from './sidebar/TypographyControls';
 import WordPreview from './sidebar/WordPreview';
 import BaselineControls from './sidebar/BaselineControls';
 import EditedCharacters from './sidebar/EditedCharacters';
+import OrphanedBoxes from './sidebar/OrphanedBoxes';
 import ExportPanel from './sidebar/ExportPanel';
 import CharacterEditModal from './modals/CharacterEditModal';
 
@@ -99,6 +100,7 @@ export default function MainAnnotator() {
           <CharacterPicker />
           <BaselineControls />
           <EditedCharacters />
+          <OrphanedBoxes />
           <FilterControls />
         </div>
       </div>
