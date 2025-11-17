@@ -17,6 +17,8 @@ export default function CharacterPicker() {
   const charPadding = useAnnotatorStore((state) => state.charPadding);
   const selectedVariants = useAnnotatorStore((state) => state.selectedVariants);
   const setSelectedVariant = useAnnotatorStore((state) => state.setSelectedVariant);
+  const textPositionVariants = useAnnotatorStore((state) => state.textPositionVariants);
+  const clearAllPositionVariantsForChar = useAnnotatorStore((state) => state.clearAllPositionVariantsForChar);
   const getVariantsForChar = useAnnotatorStore((state) => state.getVariantsForChar);
 
   if (uniqueChars.length === 0) return null;
@@ -38,39 +40,9 @@ export default function CharacterPicker() {
         return;
       }
 
-      // Smart box preservation: only remove boxes for characters that no longer exist
-      if (boxes.length > 0) {
-        const newChars = [...new Set(newText.split(''))];
-        const oldChars = [...new Set(currentText.split(''))];
-        const removedChars = oldChars.filter(c => !newChars.includes(c));
-
-        if (removedChars.length > 0) {
-          const removedList = removedChars.join(', ');
-          if (!confirm(`This will remove boxes for: ${removedList}\n\nBoxes for other characters will be preserved. Continue?`)) {
-            return;
-          }
-
-          // Keep only boxes for characters that still exist in new string
-          const preservedBoxes = boxes.filter(box => newChars.includes(box.char));
-
-          // Update editedCharData to match new box indices
-          const oldEditedCharData = useAnnotatorStore.getState().editedCharData;
-          const newEditedCharData = {};
-
-          preservedBoxes.forEach((box, newIndex) => {
-            const oldIndex = boxes.indexOf(box);
-            if (oldEditedCharData[oldIndex]) {
-              newEditedCharData[newIndex] = oldEditedCharData[oldIndex];
-            }
-          });
-
-          useAnnotatorStore.getState().setBoxes(preservedBoxes);
-          useAnnotatorStore.getState().setEditedCharData(newEditedCharData);
-        }
-        // If no characters removed, keep all boxes
-      }
-
-      // Update text only (preserve boxes and kerning)
+      // Simply update text - boxes for removed characters become orphaned automatically
+      // Orphaned boxes are hidden in canvas but preserved in storage
+      // They will reappear if the character is added back to the string
       useAnnotatorStore.getState().updateTextOnly(newText);
     }
   };
@@ -258,17 +230,62 @@ export default function CharacterPicker() {
 
               {/* Variant thumbnails (only if multiple variants exist) */}
               {variants.length > 1 && (
-                <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {variants.map((box) => (
-                    <VariantThumbnail
-                      key={box.variantId}
-                      box={box}
-                      isSelected={currentSelectedVariant === box.variantId}
-                      onClick={() => setSelectedVariant(index, box.variantId)}
-                      renderFn={renderCharacterThumbnail}
-                    />
-                  ))}
-                </div>
+                <>
+                  <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {variants.map((box) => (
+                      <VariantThumbnail
+                        key={box.variantId}
+                        box={box}
+                        isSelected={currentSelectedVariant === box.variantId}
+                        onClick={() => setSelectedVariant(index, box.variantId)}
+                        renderFn={renderCharacterThumbnail}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Clear Overrides button (only if position overrides exist) */}
+                  {(() => {
+                    const char = uniqueChars[index];
+                    const overrideCount = Object.keys(textPositionVariants).filter(pos => {
+                      return text[pos] === char;
+                    }).length;
+
+                    if (overrideCount === 0) return null;
+
+                    return (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearAllPositionVariantsForChar(char);
+                        }}
+                        style={{
+                          marginTop: '8px',
+                          padding: '4px 8px',
+                          background: '#f3e5f5',
+                          color: '#9C27B0',
+                          border: '1px solid #9C27B0',
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          width: '100%'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#9C27B0';
+                          e.currentTarget.style.color = 'white';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = '#f3e5f5';
+                          e.currentTarget.style.color = '#9C27B0';
+                        }}
+                        title={`Clear ${overrideCount} position override${overrideCount !== 1 ? 's' : ''} for '${char}'`}
+                      >
+                        Clear {overrideCount} Override{overrideCount !== 1 ? 's' : ''}
+                      </button>
+                    );
+                  })()}
+                </>
               )}
             </div>
           );

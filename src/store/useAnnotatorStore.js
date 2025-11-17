@@ -33,6 +33,7 @@ const useAnnotatorStore = create((set, get) => {
     currentCharIndex: 0,
     uniqueChars: savedText ? [...new Set(savedText.split(''))] : [],
     selectedVariants: {}, // Maps charIndex to selected variantId (default 0)
+    textPositionVariants: {}, // Maps text position to variantId (overrides selectedVariants)
 
   // Canvas state
   scale: 1,
@@ -200,6 +201,30 @@ const useAnnotatorStore = create((set, get) => {
   setSelectedVariant: (charIndex, variantId) => set((state) => ({
     selectedVariants: { ...state.selectedVariants, [charIndex]: variantId }
   })),
+
+  // Per-position variant overrides
+  setPositionVariant: (position, variantId) => set((state) => ({
+    textPositionVariants: { ...state.textPositionVariants, [position]: variantId }
+  })),
+
+  clearPositionVariant: (position) => set((state) => {
+    const { [position]: removed, ...remaining } = state.textPositionVariants;
+    return { textPositionVariants: remaining };
+  }),
+
+  clearAllPositionVariantsForChar: (char) => set((state) => {
+    const text = state.text;
+    const newPositionVariants = { ...state.textPositionVariants };
+
+    // Remove all position overrides for this character
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === char) {
+        delete newPositionVariants[i];
+      }
+    }
+
+    return { textPositionVariants: newPositionVariants };
+  }),
 
   nextChar: () => set((state) => {
     const nextIndex = state.currentCharIndex + 1;

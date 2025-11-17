@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, RotateCcw, Trash2 } from 'lucide-react';
+import { X, Save, Trash2 } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 
 export default function CharacterEditModal() {
@@ -92,15 +92,22 @@ export default function CharacterEditModal() {
         PADDING * scale, PADDING * scale, box.width * scale, box.height * scale
       );
 
-      // If brush mask exists, draw red overlay on masked areas to show what's kept
+      ctx.restore();
+
+      // Now overlay red on MASKED OUT areas (what gets removed)
+      ctx.save();
+      ctx.globalAlpha = 0.2;
+      ctx.fillStyle = '#ff0000';
+
+      // If brush mask exists: Red overlay OUTSIDE the mask (everything that gets cut away)
       if (box.brushMask && box.brushMask.length > 0) {
-        // Create offscreen canvas for mask
+        // Create offscreen canvas to determine what's kept
         const maskCanvas = document.createElement('canvas');
         maskCanvas.width = canvas.width;
         maskCanvas.height = canvas.height;
         const maskCtx = maskCanvas.getContext('2d');
 
-        // Draw mask shape
+        // Draw mask shape (what we KEEP)
         maskCtx.fillStyle = 'black';
         maskCtx.strokeStyle = 'black';
 
@@ -155,43 +162,15 @@ export default function CharacterEditModal() {
         maskCtx.closePath();
         maskCtx.fill('nonzero');
 
-        // Draw red overlay on masked areas (20% opacity) using mask
-        ctx.save();
-        ctx.globalAlpha = 0.2;
-
-        // Clip to mask shape
-        ctx.beginPath();
-        box.brushMask.forEach(stroke => {
-          stroke.points.forEach((point, i) => {
-            const boxRelativeX = point.x - box.x;
-            const boxRelativeY = point.y - box.y;
-            const x = (PADDING + boxRelativeX) * scale;
-            const y = (PADDING + boxRelativeY) * scale;
-            if (i === 0) {
-              ctx.moveTo(x, y);
-            } else {
-              ctx.lineTo(x, y);
-            }
-          });
-        });
-
-        // Close and clip
-        ctx.closePath();
-        ctx.clip();
-
-        // Fill with red
-        ctx.fillStyle = '#ff0000';
+        // Fill entire canvas with red, then remove red from kept areas
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx.restore();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.drawImage(maskCanvas, 0, 0);
+        ctx.globalCompositeOperation = 'source-over';
       }
 
-      ctx.restore();
-
-      // Apply erase mask (from previous edit sessions) - convert from absolute to box-relative
+      // Erase mask: Red overlay on erased areas
       eraseMaskRef.current.forEach(stroke => {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = 'rgba(0,0,0,1)';
         stroke.points.forEach(point => {
           // Convert from absolute image coordinates to box-relative coordinates
           const boxRelativeX = point.x - box.x;
@@ -205,8 +184,9 @@ export default function CharacterEditModal() {
           ctx.arc(displayX, displayY, displaySize / 2, 0, Math.PI * 2);
           ctx.fill();
         });
-        ctx.globalCompositeOperation = 'source-over';
       });
+
+      ctx.restore();
     };
 
     if (image) {
@@ -375,6 +355,34 @@ export default function CharacterEditModal() {
       const rect = canvas.getBoundingClientRect();
       setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     }
+
+    // If mouse button is still held down when re-entering, start a new stroke
+    if (e.buttons === 1 && !isErasing) {
+      setIsErasing(true);
+
+      // Start a new stroke at entry point
+      const rect = canvas.getBoundingClientRect();
+      const displayX = e.clientX - rect.left;
+      const displayY = e.clientY - rect.top;
+
+      const PADDING = 20;
+      const scale = scaleRef.current;
+      const boxRelativeX = (displayX - (PADDING * scale)) / scale;
+      const boxRelativeY = (displayY - (PADDING * scale)) / scale;
+
+      const imageX = box.x + boxRelativeX;
+      const imageY = box.y + boxRelativeY;
+
+      currentStrokeRef.current = {
+        size: editBrushSize / scale,
+        points: [{
+          x: imageX,
+          y: imageY
+        }]
+      };
+
+      erase(e);
+    }
   };
 
   const handleMouseLeave = () => {
@@ -470,24 +478,6 @@ export default function CharacterEditModal() {
       ctx.arc(displayX, displayY, editBrushSize / 2, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalCompositeOperation = 'source-over';
-    }
-  };
-
-  const handleReset = () => {
-    if (!box || !canvasRef.current || !image) return;
-
-    // Clear the erase mask
-    eraseMaskRef.current = [];
-
-    // Re-render from original
-    rerender();
-
-    // If there was a previous edit, mark as changed so user can save the reset
-    // Otherwise, we're already at the original state
-    if (editedCharData[editingBoxIndex]) {
-      setHasChanges(true);
-    } else {
-      setHasChanges(false);
     }
   };
 
@@ -621,63 +611,25 @@ export default function CharacterEditModal() {
           borderBottom: '1px solid #ddd',
           background: '#f9fafb'
         }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '16px'
-          }}>
-            <div style={{ flex: 1 }}>
-              <label style={{
-                fontSize: '14px',
-                fontWeight: 600,
-                color: '#4a5568',
-                display: 'block',
-                marginBottom: '4px'
-              }}>
-                Brush Size: {editBrushSize}px
-              </label>
-              <input
-                type="range"
-                min="5"
-                max="100"
-                step="5"
-                value={editBrushSize}
-                onChange={(e) => setEditBrushSize(parseInt(e.target.value))}
-                style={{ width: '100%', height: '8px' }}
-              />
-            </div>
-
-            <button
-              onClick={handleReset}
-              disabled={!box.brushMask && !editedCharData[editingBoxIndex] && !hasChanges}
-              style={{
-                padding: '8px 16px',
-                background: (box.brushMask || editedCharData[editingBoxIndex] || hasChanges) ? '#f97316' : '#cbd5e0',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontWeight: 500,
-                cursor: (box.brushMask || editedCharData[editingBoxIndex] || hasChanges) ? 'pointer' : 'not-allowed',
-                opacity: (box.brushMask || editedCharData[editingBoxIndex] || hasChanges) ? 1 : 0.5,
-                transition: 'background 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-              onMouseOver={(e) => {
-                if (box.brushMask || editedCharData[editingBoxIndex] || hasChanges) {
-                  e.currentTarget.style.background = '#ea580c';
-                }
-              }}
-              onMouseOut={(e) => {
-                if (box.brushMask || editedCharData[editingBoxIndex] || hasChanges) {
-                  e.currentTarget.style.background = '#f97316';
-                }
-              }}
-            >
-              <RotateCcw style={{ width: '16px', height: '16px' }} />
-              Reset to Original
-            </button>
+          <div style={{ flex: 1 }}>
+            <label style={{
+              fontSize: '14px',
+              fontWeight: 600,
+              color: '#4a5568',
+              display: 'block',
+              marginBottom: '4px'
+            }}>
+              Brush Size: {editBrushSize}px
+            </label>
+            <input
+              type="range"
+              min="5"
+              max="100"
+              step="5"
+              value={editBrushSize}
+              onChange={(e) => setEditBrushSize(parseInt(e.target.value))}
+              style={{ width: '100%', height: '8px' }}
+            />
           </div>
 
           <p style={{
@@ -685,7 +637,7 @@ export default function CharacterEditModal() {
             color: '#6b7280',
             marginTop: '8px'
           }}>
-            Click and drag to erase unwanted pixels. Use "Reset to Original" to clear all masking.
+            Click and drag to erase unwanted pixels. Use "Delete Mask" to remove all masking.
           </p>
         </div>
 
