@@ -245,11 +245,9 @@ export default function CharacterEditModal() {
           redCtx.restore();
         }
 
-        // Apply red multiply layer over the character
-        redCtx.globalCompositeOperation = 'multiply';
-        redCtx.fillStyle = '#FF0000';
+        // Apply semi-transparent red overlay over the character
+        redCtx.fillStyle = 'rgba(255, 0, 0, 0.5)';
         redCtx.fillRect(0, 0, redCanvas.width, redCanvas.height);
-        redCtx.globalCompositeOperation = 'source-over';
 
         // Clip red layer to erased areas only (use mask canvas)
         redCtx.globalCompositeOperation = 'destination-in';
@@ -407,11 +405,9 @@ export default function CharacterEditModal() {
         redCtx.restore();
       }
 
-      // Apply red multiply layer over the character
-      redCtx.globalCompositeOperation = 'multiply';
-      redCtx.fillStyle = '#FF0000';
+      // Apply semi-transparent red overlay over the character
+      redCtx.fillStyle = 'rgba(255, 0, 0, 0.5)';
       redCtx.fillRect(0, 0, redCanvas.width, redCanvas.height);
-      redCtx.globalCompositeOperation = 'source-over';
 
       // Clip red layer to erased areas only (use mask canvas)
       redCtx.globalCompositeOperation = 'destination-in';
