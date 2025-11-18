@@ -196,22 +196,67 @@ export default function CharacterEditModal() {
         ctx.globalCompositeOperation = 'source-over';
       }
 
-      // Erase mask: Red overlay on erased areas
-      eraseMaskRef.current.forEach(stroke => {
-        stroke.points.forEach(point => {
-          // Convert from absolute image coordinates to box-relative coordinates
-          const boxRelativeX = point.x - box.x;
-          const boxRelativeY = point.y - box.y;
+      // Erase mask: Red overlay on erased areas (use same method as rerender)
+      if (maskCanvasRef.current && eraseMaskRef.current.length > 0) {
+        // Create red overlay layer
+        const redCanvas = document.createElement('canvas');
+        redCanvas.width = canvas.width;
+        redCanvas.height = canvas.height;
+        const redCtx = redCanvas.getContext('2d');
 
-          const displayX = (PADDING + boxRelativeX) * scale;
-          const displayY = (PADDING + boxRelativeY) * scale;
-          const displaySize = stroke.size * scale;
+        // Draw original character with more intense red tint
+        redCtx.filter = 'sepia(100%) saturate(600%) hue-rotate(-60deg) brightness(0.7)';
 
-          ctx.beginPath();
-          ctx.arc(displayX, displayY, displaySize / 2, 0, Math.PI * 2);
-          ctx.fill();
-        });
-      });
+        // Apply brush mask clipping if it exists
+        if (box.brushMask && box.brushMask.length > 0) {
+          redCtx.save();
+          redCtx.beginPath();
+          box.brushMask.forEach(stroke => {
+            stroke.points.forEach((point, i) => {
+              const boxRelativeX = point.x - box.x;
+              const boxRelativeY = point.y - box.y;
+              const x = (PADDING + boxRelativeX) * scale;
+              const y = (PADDING + boxRelativeY) * scale;
+              if (i === 0) {
+                redCtx.moveTo(x, y);
+              } else {
+                redCtx.lineTo(x, y);
+              }
+            });
+          });
+          box.brushMask.forEach(stroke => {
+            const radius = (stroke.size / 2) * scale;
+            stroke.points.forEach(point => {
+              const boxRelativeX = point.x - box.x;
+              const boxRelativeY = point.y - box.y;
+              const x = (PADDING + boxRelativeX) * scale;
+              const y = (PADDING + boxRelativeY) * scale;
+              redCtx.moveTo(x + radius, y);
+              redCtx.arc(x, y, radius, 0, Math.PI * 2);
+            });
+          });
+          redCtx.clip();
+        }
+
+        redCtx.drawImage(
+          image,
+          box.x, box.y, box.width, box.height,
+          PADDING * scale, PADDING * scale, box.width * scale, box.height * scale
+        );
+
+        if (box.brushMask && box.brushMask.length > 0) {
+          redCtx.restore();
+        }
+
+        // Clip red layer to erased areas only (use mask canvas)
+        redCtx.globalCompositeOperation = 'destination-in';
+        redCtx.drawImage(maskCanvasRef.current, 0, 0);
+
+        // Composite red overlay onto main canvas
+        ctx.globalAlpha = 0.7;
+        ctx.drawImage(redCanvas, 0, 0);
+        ctx.globalAlpha = 1.0;
+      }
 
       ctx.restore();
     };
@@ -320,8 +365,8 @@ export default function CharacterEditModal() {
       redCanvas.height = canvas.height;
       const redCtx = redCanvas.getContext('2d');
 
-      // Draw original character with red tint
-      redCtx.filter = 'sepia(100%) saturate(300%) hue-rotate(-50deg) brightness(0.8)';
+      // Draw original character with more intense red tint
+      redCtx.filter = 'sepia(100%) saturate(600%) hue-rotate(-60deg) brightness(0.7)';
 
       // Apply brush mask clipping if it exists
       if (box.brushMask && box.brushMask.length > 0) {
@@ -369,7 +414,7 @@ export default function CharacterEditModal() {
       redCtx.drawImage(maskCanvasRef.current, 0, 0);
 
       // Composite red overlay onto main canvas with transparency
-      ctx.globalAlpha = 0.6; // Semi-transparent so original shows through
+      ctx.globalAlpha = 0.7; // Semi-transparent so original shows through
       ctx.drawImage(redCanvas, 0, 0);
       ctx.globalAlpha = 1.0;
     }
