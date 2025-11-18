@@ -1027,6 +1027,31 @@ export default function WordPreview() {
           tempCtx.globalCompositeOperation = 'source-over';
         }
 
+        // Apply erase mask if it exists (from character editing) - BEFORE drawing to main canvas
+        // This ensures transparent areas don't reveal white background when kerned
+        if (originalBoxIndex !== -1 && editedCharData[originalBoxIndex]) {
+          const editData = editedCharData[originalBoxIndex];
+          const eraseMask = typeof editData === 'string' ? null : editData.eraseMask;
+
+          if (eraseMask && eraseMask.length > 0) {
+            eraseMask.forEach(stroke => {
+              tempCtx.globalCompositeOperation = 'destination-out';
+              tempCtx.fillStyle = 'rgba(0,0,0,1)';
+              stroke.points.forEach(point => {
+                // Convert from absolute image coordinates to box-relative coordinates
+                const boxRelativeX = point.x - box.x;
+                const boxRelativeY = point.y - box.y;
+                const x = charPadding + boxRelativeX;
+                const y = charPadding + boxRelativeY;
+                tempCtx.beginPath();
+                tempCtx.arc(x, y, stroke.size / 2, 0, Math.PI * 2);
+                tempCtx.fill();
+              });
+              tempCtx.globalCompositeOperation = 'source-over';
+            });
+          }
+        }
+
         // Reset filter on main canvas before drawing (filter already applied to tempCanvas)
         ctx.filter = 'none';
 
@@ -1035,30 +1060,6 @@ export default function WordPreview() {
         ctx.globalCompositeOperation = imageFilters.invert ? 'source-over' : 'multiply';
         ctx.drawImage(tempCanvas, 0, 0, boxWidth, boxHeight, currentX, yPos, boxWidth, boxHeight);
         ctx.globalCompositeOperation = 'source-over';
-
-        // Apply erase mask if it exists (from character editing) - MUST be before restore()
-        if (originalBoxIndex !== -1 && editedCharData[originalBoxIndex]) {
-          const editData = editedCharData[originalBoxIndex];
-          const eraseMask = typeof editData === 'string' ? null : editData.eraseMask;
-
-          if (eraseMask && eraseMask.length > 0) {
-            eraseMask.forEach(stroke => {
-              ctx.globalCompositeOperation = 'destination-out';
-              ctx.fillStyle = 'rgba(0,0,0,1)';
-              stroke.points.forEach(point => {
-                // Convert from absolute image coordinates to box-relative coordinates
-                const boxRelativeX = point.x - box.x;
-                const boxRelativeY = point.y - box.y;
-                const x = currentX + charPadding + boxRelativeX;
-                const y = yPos + charPadding + boxRelativeY;
-                ctx.beginPath();
-                ctx.arc(x, y, stroke.size / 2, 0, Math.PI * 2);
-                ctx.fill();
-              });
-              ctx.globalCompositeOperation = 'source-over';
-            });
-          }
-        }
 
           ctx.restore();
 
