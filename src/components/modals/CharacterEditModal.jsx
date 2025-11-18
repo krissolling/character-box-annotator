@@ -9,6 +9,7 @@ export default function CharacterEditModal() {
   const scaleRef = useRef(3); // Store the current scale for use in handlers
   const eraseMaskRef = useRef([]); // Store erase strokes to always apply to original image
   const currentStrokeRef = useRef(null); // Current stroke being drawn
+  const maskCanvasRef = useRef(null); // Binary mask canvas for erase visualization
   const [isErasing, setIsErasing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [cursorPos, setCursorPos] = useState(null);
@@ -62,6 +63,12 @@ export default function CharacterEditModal() {
       cursorCanvas.height = canvasHeight;
     }
 
+    // Create and initialize mask canvas for erase visualization
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = canvasWidth;
+    maskCanvas.height = canvasHeight;
+    maskCanvasRef.current = maskCanvas;
+
     // Load existing erase mask if this character was previously edited
     if (editingBoxIndex !== null && editedCharData[editingBoxIndex]) {
       const editData = editedCharData[editingBoxIndex];
@@ -76,6 +83,26 @@ export default function CharacterEditModal() {
     } else {
       eraseMaskRef.current = [];
     }
+
+    // Initialize mask canvas with existing erase strokes
+    const maskCtx = maskCanvas.getContext('2d');
+    maskCtx.fillStyle = 'white';
+    maskCtx.globalCompositeOperation = 'lighten'; // Prevents overlaps from getting brighter
+    eraseMaskRef.current.forEach(stroke => {
+      stroke.points.forEach(point => {
+        // Convert from absolute image coordinates to box-relative coordinates
+        const boxRelativeX = point.x - box.x;
+        const boxRelativeY = point.y - box.y;
+        const displayX = (PADDING + boxRelativeX) * scale;
+        const displayY = (PADDING + boxRelativeY) * scale;
+        const displaySize = stroke.size * scale;
+
+        maskCtx.beginPath();
+        maskCtx.arc(displayX, displayY, displaySize / 2, 0, Math.PI * 2);
+        maskCtx.fill();
+      });
+    });
+    maskCtx.globalCompositeOperation = 'source-over';
 
     // ALWAYS render from the original image
     const renderFromOriginal = () => {
@@ -285,25 +312,67 @@ export default function CharacterEditModal() {
 
     ctx.restore();
 
-    // Apply erase mask (from edit sessions) - convert from absolute to box-relative
-    eraseMaskRef.current.forEach(stroke => {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.fillStyle = 'rgba(0,0,0,1)';
-      stroke.points.forEach(point => {
-        // Convert from absolute image coordinates to box-relative coordinates
-        const boxRelativeX = point.x - box.x;
-        const boxRelativeY = point.y - box.y;
+    // Apply red overlay visualization for erased areas
+    if (maskCanvasRef.current) {
+      // Create red overlay layer
+      const redCanvas = document.createElement('canvas');
+      redCanvas.width = canvas.width;
+      redCanvas.height = canvas.height;
+      const redCtx = redCanvas.getContext('2d');
 
-        const displayX = (PADDING + boxRelativeX) * scale;
-        const displayY = (PADDING + boxRelativeY) * scale;
-        const displaySize = stroke.size * scale;
+      // Draw original character with red tint
+      redCtx.filter = 'sepia(100%) saturate(300%) hue-rotate(-50deg) brightness(0.8)';
 
-        ctx.beginPath();
-        ctx.arc(displayX, displayY, displaySize / 2, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.globalCompositeOperation = 'source-over';
-    });
+      // Apply brush mask clipping if it exists
+      if (box.brushMask && box.brushMask.length > 0) {
+        redCtx.save();
+        redCtx.beginPath();
+        box.brushMask.forEach(stroke => {
+          stroke.points.forEach((point, i) => {
+            const boxRelativeX = point.x - box.x;
+            const boxRelativeY = point.y - box.y;
+            const x = (PADDING + boxRelativeX) * scale;
+            const y = (PADDING + boxRelativeY) * scale;
+            if (i === 0) {
+              redCtx.moveTo(x, y);
+            } else {
+              redCtx.lineTo(x, y);
+            }
+          });
+        });
+        box.brushMask.forEach(stroke => {
+          const radius = (stroke.size / 2) * scale;
+          stroke.points.forEach(point => {
+            const boxRelativeX = point.x - box.x;
+            const boxRelativeY = point.y - box.y;
+            const x = (PADDING + boxRelativeX) * scale;
+            const y = (PADDING + boxRelativeY) * scale;
+            redCtx.moveTo(x + radius, y);
+            redCtx.arc(x, y, radius, 0, Math.PI * 2);
+          });
+        });
+        redCtx.clip();
+      }
+
+      redCtx.drawImage(
+        image,
+        box.x, box.y, box.width, box.height,
+        PADDING * scale, PADDING * scale, box.width * scale, box.height * scale
+      );
+
+      if (box.brushMask && box.brushMask.length > 0) {
+        redCtx.restore();
+      }
+
+      // Clip red layer to erased areas only (use mask canvas)
+      redCtx.globalCompositeOperation = 'destination-in';
+      redCtx.drawImage(maskCanvasRef.current, 0, 0);
+
+      // Composite red overlay onto main canvas with transparency
+      ctx.globalAlpha = 0.6; // Semi-transparent so original shows through
+      ctx.drawImage(redCanvas, 0, 0);
+      ctx.globalAlpha = 1.0;
+    }
   };
 
   const handleMouseDown = (e) => {
@@ -451,18 +520,22 @@ export default function CharacterEditModal() {
           y: interpY   // Absolute image coordinates
         });
 
-        // Draw interpolated point immediately for visual feedback
+        // Draw interpolated point to mask canvas
         const interpDisplayX = (interpX - box.x) * scale + (PADDING * scale);
         const interpDisplayY = (interpY - box.y) * scale + (PADDING * scale);
 
-        const ctx = canvas.getContext('2d');
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = 'rgba(0,0,0,1)';
-        ctx.beginPath();
-        ctx.arc(interpDisplayX, interpDisplayY, editBrushSize / 2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalCompositeOperation = 'source-over';
+        if (maskCanvasRef.current) {
+          const maskCtx = maskCanvasRef.current.getContext('2d');
+          maskCtx.globalCompositeOperation = 'lighten';
+          maskCtx.fillStyle = 'white';
+          maskCtx.beginPath();
+          maskCtx.arc(interpDisplayX, interpDisplayY, editBrushSize / 2, 0, Math.PI * 2);
+          maskCtx.fill();
+          maskCtx.globalCompositeOperation = 'source-over';
+        }
       }
+      // Re-render after interpolation to show red overlay
+      rerender();
     } else {
       // Add point to current stroke in ABSOLUTE image coordinates
       points.push({
@@ -470,14 +543,19 @@ export default function CharacterEditModal() {
         y: imageY   // Absolute image coordinates
       });
 
-      // For smooth drawing, erase at display coordinates immediately
-      const ctx = canvas.getContext('2d');
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.fillStyle = 'rgba(0,0,0,1)';
-      ctx.beginPath();
-      ctx.arc(displayX, displayY, editBrushSize / 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalCompositeOperation = 'source-over';
+      // Draw point to mask canvas
+      if (maskCanvasRef.current) {
+        const maskCtx = maskCanvasRef.current.getContext('2d');
+        maskCtx.globalCompositeOperation = 'lighten';
+        maskCtx.fillStyle = 'white';
+        maskCtx.beginPath();
+        maskCtx.arc(displayX, displayY, editBrushSize / 2, 0, Math.PI * 2);
+        maskCtx.fill();
+        maskCtx.globalCompositeOperation = 'source-over';
+      }
+
+      // Re-render to show red overlay
+      rerender();
     }
   };
 
