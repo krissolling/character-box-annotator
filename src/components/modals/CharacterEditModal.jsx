@@ -196,7 +196,7 @@ export default function CharacterEditModal() {
         ctx.globalCompositeOperation = 'source-over';
       }
 
-      // Erase mask: Red overlay on erased areas (use same method as rerender)
+      // Erase mask: Red multiply overlay on erased areas
       if (maskCanvasRef.current && eraseMaskRef.current.length > 0) {
         // Create red overlay layer
         const redCanvas = document.createElement('canvas');
@@ -204,10 +204,7 @@ export default function CharacterEditModal() {
         redCanvas.height = canvas.height;
         const redCtx = redCanvas.getContext('2d');
 
-        // Draw original character with more intense red tint
-        redCtx.filter = 'sepia(100%) saturate(600%) hue-rotate(-60deg) brightness(0.7)';
-
-        // Apply brush mask clipping if it exists
+        // Draw original character (no filter)
         if (box.brushMask && box.brushMask.length > 0) {
           redCtx.save();
           redCtx.beginPath();
@@ -248,14 +245,18 @@ export default function CharacterEditModal() {
           redCtx.restore();
         }
 
+        // Apply red multiply layer over the character
+        redCtx.globalCompositeOperation = 'multiply';
+        redCtx.fillStyle = '#FF0000';
+        redCtx.fillRect(0, 0, redCanvas.width, redCanvas.height);
+        redCtx.globalCompositeOperation = 'source-over';
+
         // Clip red layer to erased areas only (use mask canvas)
         redCtx.globalCompositeOperation = 'destination-in';
         redCtx.drawImage(maskCanvasRef.current, 0, 0);
 
         // Composite red overlay onto main canvas
-        ctx.globalAlpha = 0.7;
         ctx.drawImage(redCanvas, 0, 0);
-        ctx.globalAlpha = 1.0;
       }
 
       ctx.restore();
@@ -357,7 +358,7 @@ export default function CharacterEditModal() {
 
     ctx.restore();
 
-    // Apply red overlay visualization for erased areas
+    // Apply red multiply overlay for erased areas
     if (maskCanvasRef.current) {
       // Create red overlay layer
       const redCanvas = document.createElement('canvas');
@@ -365,10 +366,7 @@ export default function CharacterEditModal() {
       redCanvas.height = canvas.height;
       const redCtx = redCanvas.getContext('2d');
 
-      // Draw original character with more intense red tint
-      redCtx.filter = 'sepia(100%) saturate(600%) hue-rotate(-60deg) brightness(0.7)';
-
-      // Apply brush mask clipping if it exists
+      // Draw original character (no filter)
       if (box.brushMask && box.brushMask.length > 0) {
         redCtx.save();
         redCtx.beginPath();
@@ -409,14 +407,18 @@ export default function CharacterEditModal() {
         redCtx.restore();
       }
 
+      // Apply red multiply layer over the character
+      redCtx.globalCompositeOperation = 'multiply';
+      redCtx.fillStyle = '#FF0000';
+      redCtx.fillRect(0, 0, redCanvas.width, redCanvas.height);
+      redCtx.globalCompositeOperation = 'source-over';
+
       // Clip red layer to erased areas only (use mask canvas)
       redCtx.globalCompositeOperation = 'destination-in';
       redCtx.drawImage(maskCanvasRef.current, 0, 0);
 
-      // Composite red overlay onto main canvas with transparency
-      ctx.globalAlpha = 0.7; // Semi-transparent so original shows through
+      // Composite red overlay onto main canvas
       ctx.drawImage(redCanvas, 0, 0);
-      ctx.globalAlpha = 1.0;
     }
   };
 
