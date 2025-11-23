@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from 'react';
 import { Pipette, Package } from 'lucide-react';
 import JSZip from 'jszip';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
+import { Waifu2xUpscaler, resizeImage, getImageData, imageDataToCanvas } from '../../lib/upscaler';
 
 export default function WordPreview() {
   const canvasRef = useRef(null);
@@ -21,6 +22,9 @@ export default function WordPreview() {
   const [variantPickerData, setVariantPickerData] = useState(null); // { position, char, charIndex, currentVariant, availableVariants }
   const isHoveringButtonRef = useRef(false);
   const hoverClearTimeoutRef = useRef(null);
+  const [isUpscaling, setIsUpscaling] = useState(false);
+  const [upscaleProgress, setUpscaleProgress] = useState(0);
+  const upscalerRef = useRef(null);
 
   const image = useAnnotatorStore((state) => state.image);
   const boxes = useAnnotatorStore((state) => state.boxes);
@@ -139,6 +143,58 @@ export default function WordPreview() {
     link.href = url;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadUpscaled = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    setIsUpscaling(true);
+    setUpscaleProgress(0);
+
+    try {
+      // Initialize upscaler if not already done
+      if (!upscalerRef.current) {
+        upscalerRef.current = new Waifu2xUpscaler();
+        await upscalerRef.current.initialize();
+      }
+
+      // Convert canvas to image for resizing
+      const img = new Image();
+      const canvasDataUrl = canvas.toDataURL('image/png');
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = canvasDataUrl;
+      });
+
+      // Resize to max 768px before upscaling
+      const { canvas: resizedCanvas } = resizeImage(img, 768);
+      const inputData = getImageData(resizedCanvas);
+
+      // Upscale (4x) - output will be ~3072px max
+      const outputData = await upscalerRef.current.upscale(inputData, (progress) => {
+        setUpscaleProgress(progress);
+      });
+
+      // Convert to displayable image and download
+      const resultCanvas = imageDataToCanvas(outputData);
+      resultCanvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = `${text}_word_image_4x.png`;
+        link.href = url;
+        link.click();
+        URL.revokeObjectURL(url);
+      });
+    } catch (error) {
+      console.error('Upscaling failed:', error);
+      alert('Upscaling failed: ' + error.message);
+    } finally {
+      setIsUpscaling(false);
+      setUpscaleProgress(0);
+    }
   };
 
   const handleWhitePoint = () => {
@@ -1273,6 +1329,24 @@ export default function WordPreview() {
             }}
           >
             Download PNG
+          </button>
+          <button
+            onClick={handleDownloadUpscaled}
+            disabled={isUpscaling}
+            title="Download 4x upscaled PNG using Waifu2x"
+            style={{
+              padding: '6px 12px',
+              fontSize: '11px',
+              background: isUpscaling ? '#666' : '#FF9800',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: isUpscaling ? 'not-allowed' : 'pointer',
+              fontWeight: 600,
+              minWidth: '100px'
+            }}
+          >
+            {isUpscaling ? `${Math.round(upscaleProgress)}%` : 'Download 4x'}
           </button>
           <button
             onClick={handleDownloadJSON}

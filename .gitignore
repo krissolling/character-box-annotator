@@ -25,3 +25,4 @@ dist-ssr
 
 # Downloaded library source code
 react-zoom-pan-pinch-master
+public/wasm/
