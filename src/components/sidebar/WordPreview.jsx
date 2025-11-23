@@ -52,15 +52,15 @@ export default function WordPreview() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Convert canvas to blob and download
+    // Convert canvas to blob and download as WebP
     canvas.toBlob((blob) => {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.download = `${text}_word_image.png`;
+      link.download = `${text}_word_image.webp`;
       link.href = url;
       link.click();
       URL.revokeObjectURL(url);
-    });
+    }, 'image/webp', 0.9);
   };
 
   const handleDownloadJSON = () => {
@@ -178,16 +178,16 @@ export default function WordPreview() {
         setUpscaleProgress(progress);
       });
 
-      // Convert to displayable image and download
+      // Convert to displayable image and download as WebP
       const resultCanvas = imageDataToCanvas(outputData);
       resultCanvas.toBlob((blob) => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.download = `${text}_word_image_4x.png`;
+        link.download = `${text}_word_image_4x.webp`;
         link.href = url;
         link.click();
         URL.revokeObjectURL(url);
-      });
+      }, 'image/webp', 0.9);
     } catch (error) {
       console.error('Upscaling failed:', error);
       alert('Upscaling failed: ' + error.message);
@@ -1328,12 +1328,12 @@ export default function WordPreview() {
               fontWeight: 600
             }}
           >
-            Download PNG
+            Download WebP
           </button>
           <button
             onClick={handleDownloadUpscaled}
             disabled={isUpscaling}
-            title="Download 4x upscaled PNG using Waifu2x"
+            title="Download 4x upscaled WebP using Waifu2x"
             style={{
               padding: '6px 12px',
               fontSize: '11px',
