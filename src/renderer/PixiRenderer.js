@@ -674,16 +674,59 @@ export class PixiRenderer {
       this.overlayLayer.addChild(graphics);
     }
 
+    // Render temporary baseline (horizontal line at cursor Y)
+    if (overlayData.tempBaseline !== undefined && overlayData.tempBaseline !== null) {
+      const y = overlayData.tempBaseline;
+      const graphics = new PIXI.Graphics();
+
+      graphics.moveTo(0, y);
+      graphics.lineTo(this.sourceImage?.width || 10000, y);
+      graphics.stroke({
+        width: 2 / scale,
+        color: 0xFF9800,
+        alpha: 0.6
+      });
+
+      this.overlayLayer.addChild(graphics);
+    }
+
     // Render line being drawn (angled baseline or rotation)
     if (overlayData.drawingLine) {
       const { start, end, tool } = overlayData.drawingLine;
       const graphics = new PIXI.Graphics();
 
-      graphics.moveTo(start.x, start.y);
-      graphics.lineTo(end.x, end.y);
+      // Extend line to full image width for baselines and rotation
+      let lineStart = start;
+      let lineEnd = end;
+
+      if (tool === 'angled' || tool === 'rotate') {
+        // Calculate line direction
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+
+        if (length > 1) {
+          const dirX = dx / length;
+          const dirY = dy / length;
+
+          // Extend to image bounds (use a large value)
+          const extendLength = (this.sourceImage?.width || 10000) * 2;
+          lineStart = {
+            x: start.x - dirX * extendLength,
+            y: start.y - dirY * extendLength
+          };
+          lineEnd = {
+            x: start.x + dirX * extendLength,
+            y: start.y + dirY * extendLength
+          };
+        }
+      }
+
+      graphics.moveTo(lineStart.x, lineStart.y);
+      graphics.lineTo(lineEnd.x, lineEnd.y);
 
       // Different colors for different tools
-      const color = tool === 'rotate' ? 0xFF5722 : 0xFF9800; // Red for rotate, Orange for baseline
+      const color = tool === 'rotate' ? 0x9C27B0 : 0xFF9800; // Purple for rotate, Orange for baseline
 
       graphics.stroke({
         width: 3 / scale,
@@ -691,7 +734,7 @@ export class PixiRenderer {
         alpha: 0.8
       });
 
-      // Draw circles at endpoints
+      // Draw circles at original (not extended) endpoints
       graphics.circle(start.x, start.y, 8 / scale);
       graphics.circle(end.x, end.y, 8 / scale);
       graphics.fill({ color, alpha: 0.8 });

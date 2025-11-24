@@ -30,8 +30,14 @@ export default function PixiCanvasTest() {
   const angledBaselines = useAnnotatorStore(state => state.angledBaselines);
   const addBaseline = useAnnotatorStore(state => state.addBaseline);
   const addAngledBaseline = useAnnotatorStore(state => state.addAngledBaseline);
-  const setImageRotation = useAnnotatorStore(state => state.setImageRotation);
+  const confirmRotation = useAnnotatorStore(state => state.confirmRotation);
   const imageRotation = useAnnotatorStore(state => state.imageRotation);
+  const tempBaselineY = useAnnotatorStore(state => state.tempBaselineY);
+  const setTempBaselineY = useAnnotatorStore(state => state.setTempBaselineY);
+  const setRotationLineStart = useAnnotatorStore(state => state.setRotationLineStart);
+  const setRotationLineEnd = useAnnotatorStore(state => state.setRotationLineEnd);
+  const rotationLineStart = useAnnotatorStore(state => state.rotationLineStart);
+  const rotationLineEnd = useAnnotatorStore(state => state.rotationLineEnd);
 
   const renderer = usePixiRenderer({
     tileSize: 512,
@@ -145,9 +151,27 @@ export default function PixiCanvasTest() {
       return;
     }
 
+    // Handle baseline tool hover (show temporary baseline line)
+    if (currentTool === 'baseline' && !isDrawingLine) {
+      setTempBaselineY(imageY);
+
+      // Update overlay to show temp baseline
+      if (pixiRenderer) {
+        pixiRenderer.setOverlayData({
+          tempBaseline: imageY
+        });
+      }
+      return;
+    }
+
     // Handle line drawing (angled baseline or rotation)
     if (isDrawingLine && lineStart) {
       setLineEnd({ x: imageX, y: imageY });
+
+      // Store in Zustand for rotation tool
+      if (currentTool === 'rotate') {
+        setRotationLineEnd({ x: imageX, y: imageY });
+      }
 
       // Update overlay to show the line being drawn
       if (pixiRenderer) {
@@ -520,6 +544,8 @@ export default function PixiCanvasTest() {
       setIsDrawingLine(true);
       setLineStart({ x: imageX, y: imageY });
       setLineEnd({ x: imageX, y: imageY });
+      setRotationLineStart({ x: imageX, y: imageY });
+      setRotationLineEnd({ x: imageX, y: imageY });
       return;
     }
 
@@ -739,10 +765,8 @@ export default function PixiCanvasTest() {
           const angle = Math.atan2(dy, dx) * (180 / Math.PI);
           addAngledBaseline(lineStart, lineEnd, angle);
         } else if (currentTool === 'rotate') {
-          // Calculate rotation angle
-          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-          // Rotate image to make this line horizontal (negate the angle)
-          setImageRotation((imageRotation || 0) - angle);
+          // Use confirmRotation which snaps to nearest horizontal or vertical
+          confirmRotation();
         }
       }
 
