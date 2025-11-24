@@ -319,7 +319,7 @@ export default function AnnotationCanvas() {
     if (!canvas || !image) return;
 
     const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio * 4 || 1;
+    const dpr = window.devicePixelRatio * 2 || 1;
 
     // Calculate canvas size to fit rotated image without clipping
     const angleRad = Math.abs(imageRotation * Math.PI / 180);
@@ -1773,6 +1773,8 @@ export default function AnnotationCanvas() {
         }}
       >
         <canvas
+          width={window.innerWidth * devicePixelRatio}
+          height={window.innerHeight * devicePixelRatio}
           ref={canvasRef}
           onClick={handleCanvasClick}
           style={{

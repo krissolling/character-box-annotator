@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Package } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 import JSZip from 'jszip';
+import { Waifu2xUpscaler, getImageData, imageDataToCanvas } from '../../lib/upscaler';
 
 export default function ExportPanel() {
   const [showModal, setShowModal] = useState(false);
   const [isUpscaling, setIsUpscaling] = useState(false);
   const [upscaleProgress, setUpscaleProgress] = useState(0);
+  const upscalerRef = useRef(null);
 
   const boxes = useAnnotatorStore((state) => state.boxes);
   const text = useAnnotatorStore((state) => state.text);
@@ -53,7 +55,7 @@ export default function ExportPanel() {
     setShowModal(false);
   };
 
-  // Export 4x WebP with Waifu2x
+  // Export 4x WebP with local Waifu2x upscaler
   const handleDownloadUpscaled = async () => {
     const canvas = getWordPreviewCanvas();
     if (!canvas) return;
@@ -68,24 +70,33 @@ export default function ExportPanel() {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     try {
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-      const formData = new FormData();
-      formData.append('image', blob, 'image.png');
-      formData.append('scale', '4');
-      formData.append('noise', '1');
+      // Initialize upscaler if needed
+      if (!upscalerRef.current) {
+        setUpscaleProgress(5);
+        upscalerRef.current = new Waifu2xUpscaler();
+        await upscalerRef.current.initialize();
+      }
 
-      const response = await fetch('https://api.waifu2x.udp.jp/api', {
-        method: 'POST',
-        body: formData
+      setUpscaleProgress(10);
+
+      // Get image data from canvas
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      // Upscale with progress callback
+      const upscaledImageData = await upscalerRef.current.upscale(imageData, (progress) => {
+        setUpscaleProgress(10 + progress * 0.85); // 10-95%
       });
 
-      if (!response.ok) throw new Error('Upscale failed');
+      setUpscaleProgress(95);
 
-      setUpscaleProgress(50);
-      const upscaledBlob = await response.blob();
+      // Convert to canvas and then to blob
+      const upscaledCanvas = imageDataToCanvas(upscaledImageData);
+      const blob = await new Promise(resolve => upscaledCanvas.toBlob(resolve, 'image/webp', 0.95));
+
       setUpscaleProgress(100);
 
-      const url = URL.createObjectURL(upscaledBlob);
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `word-preview-4x-${Date.now()}.webp`;
@@ -93,7 +104,7 @@ export default function ExportPanel() {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Upscale error:', error);
-      alert('Failed to upscale image');
+      alert('Failed to upscale image: ' + error.message);
     } finally {
       setIsUpscaling(false);
       setUpscaleProgress(0);
