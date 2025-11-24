@@ -6,6 +6,7 @@ import RightModePanel from './RightModePanel';
 export default function AnnotationCanvas() {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
+  const lastMouseUpdateRef = useRef(0);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentBox, setCurrentBox] = useState(null);
@@ -321,550 +322,550 @@ export default function AnnotationCanvas() {
     startZoomMode
   ]);
   
-
-
-// Replace your entire drawing useEffect with this:
-useEffect(() => {
-  const canvas = canvasRef.current;
-  if (!canvas || !image) return;
-
-  // Cancel any pending frame
-  if (animationFrameRef.current) {
-    cancelAnimationFrame(animationFrameRef.current);
-  }
-
-  // Schedule draw on next frame (batches rapid state changes)
-  animationFrameRef.current = requestAnimationFrame(() => {
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio * 2 || 1;
-
-    // Calculate canvas size to fit rotated image without clipping
-    const angleRad = Math.abs(imageRotation * Math.PI / 180);
-    const cos = Math.abs(Math.cos(angleRad));
-    const sin = Math.abs(Math.sin(angleRad));
-
-    // Bounding box of rotated rectangle
-    const canvasWidth = Math.ceil(image.width * cos + image.height * sin);
-    const canvasHeight = Math.ceil(image.height * cos + image.width * sin);
-
-    // Helper function to extend line to canvas edges
-    const extendLineToCanvasEdges = (centerX, centerY, angleRad, canvasWidth, canvasHeight) => {
-      const cos = Math.cos(angleRad);
-      const sin = Math.sin(angleRad);
-
-      // Calculate intersections with all 4 edges
-      const intersections = [];
-
-      // Left edge (x = 0)
-      if (cos !== 0) {
-        const t = -centerX / cos;
-        const y = centerY + t * sin;
-        if (y >= 0 && y <= canvasHeight) {
-          intersections.push({ x: 0, y, t });
-        }
-      }
-
-      // Right edge (x = canvasWidth)
-      if (cos !== 0) {
-        const t = (canvasWidth - centerX) / cos;
-        const y = centerY + t * sin;
-        if (y >= 0 && y <= canvasHeight) {
-          intersections.push({ x: canvasWidth, y, t });
-        }
-      }
-
-      // Top edge (y = 0)
-      if (sin !== 0) {
-        const t = -centerY / sin;
-        const x = centerX + t * cos;
-        if (x >= 0 && x <= canvasWidth) {
-          intersections.push({ x, y: 0, t });
-        }
-      }
-
-      // Bottom edge (y = canvasHeight)
-      if (sin !== 0) {
-        const t = (canvasHeight - centerY) / sin;
-        const x = centerX + t * cos;
-        if (x >= 0 && x <= canvasHeight) {
-          intersections.push({ x, y: canvasHeight, t });
-        }
-      }
-
-      // Sort by parameter t (distance along line from center)
-      intersections.sort((a, b) => a.t - b.t);
-
-      // Return the two endpoints (one in each direction from center)
-      if (intersections.length >= 2) {
-        return {
-          start: { x: intersections[0].x, y: intersections[0].y },
-          end: { x: intersections[intersections.length - 1].x, y: intersections[intersections.length - 1].y }
-        };
-      }
-
-      // Fallback to original 2000px if something goes wrong
-      return {
-        start: { x: centerX - cos * 1000, y: centerY - sin * 1000 },
-        end: { x: centerX + cos * 1000, y: centerY + sin * 1000 }
-      };
-    };
-
-    canvas.width = canvasWidth * dpr;
-    canvas.height = canvasHeight * dpr;
-    canvas.style.width = `${canvasWidth}px`;
-    canvas.style.height = `${canvasHeight}px`;
-
-    ctx.scale(dpr, dpr);
-
-    // Apply rotation (without pan - pan is applied via CSS transform)
-    ctx.save();
-
-    // Calculate offset to center the image in the larger canvas
-    const offsetX = (canvasWidth - image.width) / 2;
-    const offsetY = (canvasHeight - image.height) / 2;
-
-    // Apply rotation if set
-    if (imageRotation !== 0) {
-      const centerX = canvasWidth / 2;
-      const centerY = canvasHeight / 2;
-      ctx.translate(centerX, centerY);
-      ctx.rotate(imageRotation * Math.PI / 180);
-      ctx.translate(-centerX, -centerY);
+  
+  
+  // Replace your entire drawing useEffect with this:
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !image) return;
+    
+    // Cancel any pending frame
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
     }
-
-    // Draw image centered in the larger canvas
-    ctx.drawImage(image, offsetX, offsetY, image.width, image.height);
-
-    ctx.restore();
-
-    // Draw existing boxes (scaled for zoom) - OUTSIDE rotation transform
-    // UI sizes are divided by zoomLevel to remain constant on screen
-    const uiScale = 1 / zoomLevel;
-
-    boxes.forEach((box, index) => {
-      const isSelected = selectedBox === index;
-      const isHovered = hoveredBox === index && !isSelected;
-      const isOrphaned = !uniqueChars.includes(box.char);
-
-      // Skip rendering orphaned boxes
-      if (isOrphaned) {
-        return;
-      }
-
-      // Apply offset to box coordinates for drawing
-      const drawX = box.x + offsetX;
-      const drawY = box.y + offsetY;
-
-      // Highlight hovered box with a fill
-      if (isHovered) {
-        ctx.fillStyle = 'rgba(33, 150, 243, 0.1)';
-        ctx.fillRect(drawX, drawY, box.width, box.height);
-      }
-
-      ctx.strokeStyle = isSelected ? '#2196F3' : isHovered ? '#FF9800' : '#4CAF50';
-      ctx.lineWidth = (isSelected ? 3 : isHovered ? 2.5 : 2) * uiScale;
-      ctx.strokeRect(drawX, drawY, box.width, box.height);
-
-      // Draw character label with smart positioning
-      ctx.fillStyle = isSelected ? '#2196F3' : isHovered ? '#FF9800' : '#4CAF50';
-      const fontSize = 16 * uiScale;
-      ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
-
-      const labelPadding = 4 * uiScale;
-      const labelHeight = fontSize;
-      let labelX = drawX + labelPadding;
-      let labelY = drawY + labelHeight + labelPadding;
-
-      if (box.y < labelHeight + labelPadding + 5 * uiScale) {
-        labelY = (drawY + box.height) + labelHeight + labelPadding;
-      }
-
-      if (box.x < labelPadding) {
-        labelX = offsetX + labelPadding;
-      }
-
-      ctx.fillText(box.char, labelX, labelY);
-
-      // Draw star indicator if this is the selected variant
-      const selectedVariantId = selectedVariants[box.charIndex] || 0;
-      const isSelectedVariant = box.variantId === selectedVariantId;
-      if (isSelectedVariant && boxes.filter(b => b.charIndex === box.charIndex).length > 1) {
-        const starSize = 12 * uiScale;
-        const starX = (drawX + box.width) - starSize - 2 * uiScale;
-        const starY = drawY + starSize + 2 * uiScale;
-        ctx.fillStyle = '#FFD700';
-        ctx.font = `${starSize}px Antarctica, sans-serif`;
-        ctx.fillText('⭐', starX, starY);
-      }
-
-      // Draw corner handles for selected or hovered box
-      if (isSelected || isHovered) {
-        const handleSize = 8 * uiScale;
-        const corners = [
-          { x: drawX, y: drawY },
-          { x: (drawX + box.width), y: drawY },
-          { x: drawX, y: (drawY + box.height) },
-          { x: (drawX + box.width), y: (drawY + box.height) },
-        ];
-
-        corners.forEach(corner => {
-          ctx.fillStyle = isSelected ? '#2196F3' : '#FF9800';
-          ctx.fillRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
-          ctx.strokeStyle = 'white';
-          ctx.lineWidth = 1 * uiScale;
-          ctx.strokeRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
-        });
-
-        // Draw edge handles
-        const edgeHandleWidth = 20 * uiScale;
-        const edgeHandleHeight = 6 * uiScale;
-        const edges = [
-          { x: (drawX + box.width / 2), y: drawY, type: 'horizontal' },
-          { x: (drawX + box.width / 2), y: (drawY + box.height), type: 'horizontal' },
-          { x: drawX, y: (drawY + box.height / 2), type: 'vertical' },
-          { x: (drawX + box.width), y: (drawY + box.height / 2), type: 'vertical' },
-        ];
-
-        edges.forEach(edge => {
-          ctx.fillStyle = isSelected ? '#2196F3' : '#FF9800';
-          if (edge.type === 'horizontal') {
-            ctx.fillRect(edge.x - edgeHandleWidth / 2, edge.y - edgeHandleHeight / 2, edgeHandleWidth, edgeHandleHeight);
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 1 * uiScale;
-            ctx.strokeRect(edge.x - edgeHandleWidth / 2, edge.y - edgeHandleHeight / 2, edgeHandleWidth, edgeHandleHeight);
-          } else {
-            ctx.fillRect(edge.x - edgeHandleHeight / 2, edge.y - edgeHandleWidth / 2, edgeHandleHeight, edgeHandleWidth);
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 1 * uiScale;
-            ctx.strokeRect(edge.x - edgeHandleHeight / 2, edge.y - edgeHandleWidth / 2, edgeHandleHeight, edgeHandleWidth);
+    
+    // Schedule draw on next frame (batches rapid state changes)
+    animationFrameRef.current = requestAnimationFrame(() => {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio * 2 || 1;
+      
+      // Calculate canvas size to fit rotated image without clipping
+      const angleRad = Math.abs(imageRotation * Math.PI / 180);
+      const cos = Math.abs(Math.cos(angleRad));
+      const sin = Math.abs(Math.sin(angleRad));
+      
+      // Bounding box of rotated rectangle
+      const canvasWidth = Math.ceil(image.width * cos + image.height * sin);
+      const canvasHeight = Math.ceil(image.height * cos + image.width * sin);
+      
+      // Helper function to extend line to canvas edges
+      const extendLineToCanvasEdges = (centerX, centerY, angleRad, canvasWidth, canvasHeight) => {
+        const cos = Math.cos(angleRad);
+        const sin = Math.sin(angleRad);
+        
+        // Calculate intersections with all 4 edges
+        const intersections = [];
+        
+        // Left edge (x = 0)
+        if (cos !== 0) {
+          const t = -centerX / cos;
+          const y = centerY + t * sin;
+          if (y >= 0 && y <= canvasHeight) {
+            intersections.push({ x: 0, y, t });
           }
-        });
-      }
-    });
-
-    // Draw current box being drawn
-    if (currentBox) {
+        }
+        
+        // Right edge (x = canvasWidth)
+        if (cos !== 0) {
+          const t = (canvasWidth - centerX) / cos;
+          const y = centerY + t * sin;
+          if (y >= 0 && y <= canvasHeight) {
+            intersections.push({ x: canvasWidth, y, t });
+          }
+        }
+        
+        // Top edge (y = 0)
+        if (sin !== 0) {
+          const t = -centerY / sin;
+          const x = centerX + t * cos;
+          if (x >= 0 && x <= canvasWidth) {
+            intersections.push({ x, y: 0, t });
+          }
+        }
+        
+        // Bottom edge (y = canvasHeight)
+        if (sin !== 0) {
+          const t = (canvasHeight - centerY) / sin;
+          const x = centerX + t * cos;
+          if (x >= 0 && x <= canvasHeight) {
+            intersections.push({ x, y: canvasHeight, t });
+          }
+        }
+        
+        // Sort by parameter t (distance along line from center)
+        intersections.sort((a, b) => a.t - b.t);
+        
+        // Return the two endpoints (one in each direction from center)
+        if (intersections.length >= 2) {
+          return {
+            start: { x: intersections[0].x, y: intersections[0].y },
+            end: { x: intersections[intersections.length - 1].x, y: intersections[intersections.length - 1].y }
+          };
+        }
+        
+        // Fallback to original 2000px if something goes wrong
+        return {
+          start: { x: centerX - cos * 1000, y: centerY - sin * 1000 },
+          end: { x: centerX + cos * 1000, y: centerY + sin * 1000 }
+        };
+      };
+      
+      canvas.width = canvasWidth * dpr;
+      canvas.height = canvasHeight * dpr;
+      canvas.style.width = `${canvasWidth}px`;
+      canvas.style.height = `${canvasHeight}px`;
+      
+      ctx.scale(dpr, dpr);
+      
+      // Apply rotation (without pan - pan is applied via CSS transform)
       ctx.save();
-      const drawX = currentBox.x + offsetX;
-      const drawY = currentBox.y + offsetY;
-
-      ctx.strokeStyle = '#FF9800';
-      ctx.lineWidth = 2 * uiScale;
-      ctx.setLineDash([5 * uiScale, 5 * uiScale]);
-      ctx.strokeRect(drawX, drawY, currentBox.width, currentBox.height);
-      ctx.setLineDash([]);
-
-      const currentChar = uniqueChars[currentCharIndex];
-      if (currentChar) {
-        ctx.fillStyle = '#FF9800';
+      
+      // Calculate offset to center the image in the larger canvas
+      const offsetX = (canvasWidth - image.width) / 2;
+      const offsetY = (canvasHeight - image.height) / 2;
+      
+      // Apply rotation if set
+      if (imageRotation !== 0) {
+        const centerX = canvasWidth / 2;
+        const centerY = canvasHeight / 2;
+        ctx.translate(centerX, centerY);
+        ctx.rotate(imageRotation * Math.PI / 180);
+        ctx.translate(-centerX, -centerY);
+      }
+      
+      // Draw image centered in the larger canvas
+      ctx.drawImage(image, offsetX, offsetY, image.width, image.height);
+      
+      ctx.restore();
+      
+      // Draw existing boxes (scaled for zoom) - OUTSIDE rotation transform
+      // UI sizes are divided by zoomLevel to remain constant on screen
+      const uiScale = 1 / zoomLevel;
+      
+      boxes.forEach((box, index) => {
+        const isSelected = selectedBox === index;
+        const isHovered = hoveredBox === index && !isSelected;
+        const isOrphaned = !uniqueChars.includes(box.char);
+        
+        // Skip rendering orphaned boxes
+        if (isOrphaned) {
+          return;
+        }
+        
+        // Apply offset to box coordinates for drawing
+        const drawX = box.x + offsetX;
+        const drawY = box.y + offsetY;
+        
+        // Highlight hovered box with a fill
+        if (isHovered) {
+          ctx.fillStyle = 'rgba(33, 150, 243, 0.1)';
+          ctx.fillRect(drawX, drawY, box.width, box.height);
+        }
+        
+        ctx.strokeStyle = isSelected ? '#2196F3' : isHovered ? '#FF9800' : '#4CAF50';
+        ctx.lineWidth = (isSelected ? 3 : isHovered ? 2.5 : 2) * uiScale;
+        ctx.strokeRect(drawX, drawY, box.width, box.height);
+        
+        // Draw character label with smart positioning
+        ctx.fillStyle = isSelected ? '#2196F3' : isHovered ? '#FF9800' : '#4CAF50';
         const fontSize = 16 * uiScale;
         ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
-
+        
         const labelPadding = 4 * uiScale;
         const labelHeight = fontSize;
         let labelX = drawX + labelPadding;
         let labelY = drawY + labelHeight + labelPadding;
-
-        if (currentBox.y < labelHeight + labelPadding + 5 * uiScale) {
-          labelY = (drawY + currentBox.height) + labelHeight + labelPadding;
+        
+        if (box.y < labelHeight + labelPadding + 5 * uiScale) {
+          labelY = (drawY + box.height) + labelHeight + labelPadding;
         }
-
-        if (currentBox.x < labelPadding) {
+        
+        if (box.x < labelPadding) {
           labelX = offsetX + labelPadding;
         }
-
-        ctx.fillText(currentChar, labelX, labelY);
-      }
-
-      ctx.restore();
-    }
-
-    // Draw auto-solve regions
-    if (isSelectingAutoSolveRegion) {
-      ctx.save();
-
-      autoSolveRegions.forEach((region, index) => {
-        const drawX = region.x + offsetX;
-        const drawY = region.y + offsetY;
-
-        ctx.strokeStyle = '#2196F3';
-        ctx.lineWidth = 3 * uiScale;
-        ctx.strokeRect(drawX, drawY, region.width, region.height);
-        ctx.fillStyle = 'rgba(33, 150, 243, 0.1)';
-        ctx.fillRect(drawX, drawY, region.width, region.height);
-
-        ctx.fillStyle = '#2196F3';
-        const fontSize = 20 * uiScale;
-        ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
-        ctx.fillText(`${index + 1}`, drawX + 8 * uiScale, drawY + 28 * uiScale);
+        
+        ctx.fillText(box.char, labelX, labelY);
+        
+        // Draw star indicator if this is the selected variant
+        const selectedVariantId = selectedVariants[box.charIndex] || 0;
+        const isSelectedVariant = box.variantId === selectedVariantId;
+        if (isSelectedVariant && boxes.filter(b => b.charIndex === box.charIndex).length > 1) {
+          const starSize = 12 * uiScale;
+          const starX = (drawX + box.width) - starSize - 2 * uiScale;
+          const starY = drawY + starSize + 2 * uiScale;
+          ctx.fillStyle = '#FFD700';
+          ctx.font = `${starSize}px Antarctica, sans-serif`;
+          ctx.fillText('⭐', starX, starY);
+        }
+        
+        // Draw corner handles for selected or hovered box
+        if (isSelected || isHovered) {
+          const handleSize = 8 * uiScale;
+          const corners = [
+            { x: drawX, y: drawY },
+            { x: (drawX + box.width), y: drawY },
+            { x: drawX, y: (drawY + box.height) },
+            { x: (drawX + box.width), y: (drawY + box.height) },
+          ];
+          
+          corners.forEach(corner => {
+            ctx.fillStyle = isSelected ? '#2196F3' : '#FF9800';
+            ctx.fillRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 1 * uiScale;
+            ctx.strokeRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
+          });
+          
+          // Draw edge handles
+          const edgeHandleWidth = 20 * uiScale;
+          const edgeHandleHeight = 6 * uiScale;
+          const edges = [
+            { x: (drawX + box.width / 2), y: drawY, type: 'horizontal' },
+            { x: (drawX + box.width / 2), y: (drawY + box.height), type: 'horizontal' },
+            { x: drawX, y: (drawY + box.height / 2), type: 'vertical' },
+            { x: (drawX + box.width), y: (drawY + box.height / 2), type: 'vertical' },
+          ];
+          
+          edges.forEach(edge => {
+            ctx.fillStyle = isSelected ? '#2196F3' : '#FF9800';
+            if (edge.type === 'horizontal') {
+              ctx.fillRect(edge.x - edgeHandleWidth / 2, edge.y - edgeHandleHeight / 2, edgeHandleWidth, edgeHandleHeight);
+              ctx.strokeStyle = 'white';
+              ctx.lineWidth = 1 * uiScale;
+              ctx.strokeRect(edge.x - edgeHandleWidth / 2, edge.y - edgeHandleHeight / 2, edgeHandleWidth, edgeHandleHeight);
+            } else {
+              ctx.fillRect(edge.x - edgeHandleHeight / 2, edge.y - edgeHandleWidth / 2, edgeHandleHeight, edgeHandleWidth);
+              ctx.strokeStyle = 'white';
+              ctx.lineWidth = 1 * uiScale;
+              ctx.strokeRect(edge.x - edgeHandleHeight / 2, edge.y - edgeHandleWidth / 2, edgeHandleHeight, edgeHandleWidth);
+            }
+          });
+        }
       });
-
-      if (currentAutoSolveRegion && currentAutoSolveRegion.width > 0 && currentAutoSolveRegion.height > 0) {
-        const drawX = currentAutoSolveRegion.x + offsetX;
-        const drawY = currentAutoSolveRegion.y + offsetY;
-
+      
+      // Draw current box being drawn
+      if (currentBox) {
+        ctx.save();
+        const drawX = currentBox.x + offsetX;
+        const drawY = currentBox.y + offsetY;
+        
         ctx.strokeStyle = '#FF9800';
-        ctx.lineWidth = 3 * uiScale;
-        ctx.setLineDash([8 * uiScale, 8 * uiScale]);
-        ctx.strokeRect(drawX, drawY, currentAutoSolveRegion.width, currentAutoSolveRegion.height);
-        ctx.fillStyle = 'rgba(255, 152, 0, 0.1)';
-        ctx.fillRect(drawX, drawY, currentAutoSolveRegion.width, currentAutoSolveRegion.height);
+        ctx.lineWidth = 2 * uiScale;
+        ctx.setLineDash([5 * uiScale, 5 * uiScale]);
+        ctx.strokeRect(drawX, drawY, currentBox.width, currentBox.height);
         ctx.setLineDash([]);
+        
+        const currentChar = uniqueChars[currentCharIndex];
+        if (currentChar) {
+          ctx.fillStyle = '#FF9800';
+          const fontSize = 16 * uiScale;
+          ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
+          
+          const labelPadding = 4 * uiScale;
+          const labelHeight = fontSize;
+          let labelX = drawX + labelPadding;
+          let labelY = drawY + labelHeight + labelPadding;
+          
+          if (currentBox.y < labelHeight + labelPadding + 5 * uiScale) {
+            labelY = (drawY + currentBox.height) + labelHeight + labelPadding;
+          }
+          
+          if (currentBox.x < labelPadding) {
+            labelX = offsetX + labelPadding;
+          }
+          
+          ctx.fillText(currentChar, labelX, labelY);
+        }
+        
+        ctx.restore();
       }
-
-      ctx.restore();
-    }
-
-    // Draw brush strokes
-    if (isBrushBoxMode) {
-      ctx.save();
-
-      brushStrokes.forEach((stroke) => {
-        const points = stroke.points || stroke;
-        const strokeSize = stroke.size || brushBoxSize;
-
-        if (points.length > 0) {
-          ctx.strokeStyle = 'rgba(76, 175, 80, 0.6)';
-          ctx.lineWidth = strokeSize;
+      
+      // Draw auto-solve regions
+      if (isSelectingAutoSolveRegion) {
+        ctx.save();
+        
+        autoSolveRegions.forEach((region, index) => {
+          const drawX = region.x + offsetX;
+          const drawY = region.y + offsetY;
+          
+          ctx.strokeStyle = '#2196F3';
+          ctx.lineWidth = 3 * uiScale;
+          ctx.strokeRect(drawX, drawY, region.width, region.height);
+          ctx.fillStyle = 'rgba(33, 150, 243, 0.1)';
+          ctx.fillRect(drawX, drawY, region.width, region.height);
+          
+          ctx.fillStyle = '#2196F3';
+          const fontSize = 20 * uiScale;
+          ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
+          ctx.fillText(`${index + 1}`, drawX + 8 * uiScale, drawY + 28 * uiScale);
+        });
+        
+        if (currentAutoSolveRegion && currentAutoSolveRegion.width > 0 && currentAutoSolveRegion.height > 0) {
+          const drawX = currentAutoSolveRegion.x + offsetX;
+          const drawY = currentAutoSolveRegion.y + offsetY;
+          
+          ctx.strokeStyle = '#FF9800';
+          ctx.lineWidth = 3 * uiScale;
+          ctx.setLineDash([8 * uiScale, 8 * uiScale]);
+          ctx.strokeRect(drawX, drawY, currentAutoSolveRegion.width, currentAutoSolveRegion.height);
+          ctx.fillStyle = 'rgba(255, 152, 0, 0.1)';
+          ctx.fillRect(drawX, drawY, currentAutoSolveRegion.width, currentAutoSolveRegion.height);
+          ctx.setLineDash([]);
+        }
+        
+        ctx.restore();
+      }
+      
+      // Draw brush strokes
+      if (isBrushBoxMode) {
+        ctx.save();
+        
+        brushStrokes.forEach((stroke) => {
+          const points = stroke.points || stroke;
+          const strokeSize = stroke.size || brushBoxSize;
+          
+          if (points.length > 0) {
+            ctx.strokeStyle = 'rgba(76, 175, 80, 0.6)';
+            ctx.lineWidth = strokeSize;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            ctx.beginPath();
+            ctx.moveTo(points[0].x + offsetX, points[0].y + offsetY);
+            for (let i = 1; i < points.length; i++) {
+              ctx.lineTo(points[i].x + offsetX, points[i].y + offsetY);
+            }
+            ctx.stroke();
+          }
+        });
+        
+        if (currentStroke.length > 0) {
+          ctx.strokeStyle = 'rgba(33, 150, 243, 0.8)';
+          ctx.lineWidth = brushBoxSize;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
-
+          
           ctx.beginPath();
-          ctx.moveTo(points[0].x + offsetX, points[0].y + offsetY);
-          for (let i = 1; i < points.length; i++) {
-            ctx.lineTo(points[i].x + offsetX, points[i].y + offsetY);
+          ctx.moveTo(currentStroke[0].x + offsetX, currentStroke[0].y + offsetY);
+          for (let i = 1; i < currentStroke.length; i++) {
+            ctx.lineTo(currentStroke[i].x + offsetX, currentStroke[i].y + offsetY);
           }
           ctx.stroke();
         }
-      });
-
-      if (currentStroke.length > 0) {
-        ctx.strokeStyle = 'rgba(33, 150, 243, 0.8)';
-        ctx.lineWidth = brushBoxSize;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
-        ctx.beginPath();
-        ctx.moveTo(currentStroke[0].x + offsetX, currentStroke[0].y + offsetY);
-        for (let i = 1; i < currentStroke.length; i++) {
-          ctx.lineTo(currentStroke[i].x + offsetX, currentStroke[i].y + offsetY);
+        
+        if (mousePos.x > 0 && mousePos.y > 0 && !isDrawing) {
+          ctx.strokeStyle = '#4CAF50';
+          ctx.lineWidth = 2 * uiScale;
+          ctx.beginPath();
+          ctx.arc(mousePos.x + offsetX, mousePos.y + offsetY, (brushBoxSize / 2), 0, Math.PI * 2);
+          ctx.stroke();
         }
-        ctx.stroke();
+        
+        ctx.restore();
       }
-
-      if (mousePos.x > 0 && mousePos.y > 0 && !isDrawing) {
-        ctx.strokeStyle = '#4CAF50';
-        ctx.lineWidth = 2 * uiScale;
-        ctx.beginPath();
-        ctx.arc(mousePos.x + offsetX, mousePos.y + offsetY, (brushBoxSize / 2), 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      ctx.restore();
-    }
-
-    // Draw rotation line
-    if (isRotationMode && rotationLineStart) {
-      ctx.save();
-
-      const startX = rotationLineStart.x + offsetX;
-      const startY = rotationLineStart.y + offsetY;
-
-      ctx.strokeStyle = '#9C27B0';
-      ctx.lineWidth = 3 * uiScale;
-      ctx.beginPath();
-      ctx.moveTo(startX, startY);
-
-      if (rotationLineEnd) {
-        const endX = rotationLineEnd.x + offsetX;
-        const endY = rotationLineEnd.y + offsetY;
-        ctx.lineTo(endX, endY);
-        ctx.stroke();
-
-        ctx.fillStyle = '#9C27B0';
-        ctx.beginPath();
-        ctx.arc(startX, startY, 5 * uiScale, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(endX, endY, 5 * uiScale, 0, Math.PI * 2);
-        ctx.fill();
-
-        const dx = rotationLineEnd.x - rotationLineStart.x;
-        const dy = rotationLineEnd.y - rotationLineStart.y;
-        const lineLength = Math.sqrt(dx * dx + dy * dy);
-
-        if (lineLength > 30) {
-          const angleRad = Math.atan2(dy, dx);
-          const angleDeg = angleRad * (180 / Math.PI);
-
-          const midX = (startX + endX) / 2;
-          const midY = (startY + endY) / 2;
-
-          ctx.fillStyle = 'rgba(156, 39, 176, 0.9)';
-          ctx.fillRect(midX - 40, midY - 20, 80, 30);
-          ctx.fillStyle = 'white';
-          ctx.font = `bold 14px sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(`${angleDeg.toFixed(1)}°`, midX, midY);
-        }
-      } else {
-        ctx.stroke();
-
-        ctx.fillStyle = '#9C27B0';
-        ctx.beginPath();
-        ctx.arc(startX, startY, 5 * uiScale, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.restore();
-    }
-
-    // Draw baselines
-    if (baselines.length > 0 || (isBaselineMode && tempBaselineY !== null)) {
-      ctx.save();
-
-      baselines.forEach((baseline) => {
-        const drawY = baseline.y + offsetY;
-
-        ctx.strokeStyle = baseline.color;
-        ctx.lineWidth = 2;
-        ctx.setLineDash([10, 5]);
-        ctx.beginPath();
-        ctx.moveTo(0, drawY);
-        ctx.lineTo(canvasWidth, drawY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = baseline.color;
-        ctx.font = `500 12px Antarctica, sans-serif`;
-        ctx.fillText(`Baseline ${baseline.id}`, 5, drawY - 5);
-      });
-
-      if (isBaselineMode && tempBaselineY !== null) {
-        const drawY = tempBaselineY + offsetY;
-
-        ctx.strokeStyle = '#FF9800';
+      
+      // Draw rotation line
+      if (isRotationMode && rotationLineStart) {
+        ctx.save();
+        
+        const startX = rotationLineStart.x + offsetX;
+        const startY = rotationLineStart.y + offsetY;
+        
+        ctx.strokeStyle = '#9C27B0';
         ctx.lineWidth = 3 * uiScale;
-        ctx.setLineDash([10, 5]);
         ctx.beginPath();
-        ctx.moveTo(0, drawY);
-        ctx.lineTo(canvasWidth, drawY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = '#FF9800';
-        ctx.font = `500 14px Antarctica, sans-serif`;
-        ctx.fillText('New Baseline', 5, drawY - 5);
+        ctx.moveTo(startX, startY);
+        
+        if (rotationLineEnd) {
+          const endX = rotationLineEnd.x + offsetX;
+          const endY = rotationLineEnd.y + offsetY;
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+          
+          ctx.fillStyle = '#9C27B0';
+          ctx.beginPath();
+          ctx.arc(startX, startY, 5 * uiScale, 0, Math.PI * 2);
+          ctx.fill();
+          
+          ctx.beginPath();
+          ctx.arc(endX, endY, 5 * uiScale, 0, Math.PI * 2);
+          ctx.fill();
+          
+          const dx = rotationLineEnd.x - rotationLineStart.x;
+          const dy = rotationLineEnd.y - rotationLineStart.y;
+          const lineLength = Math.sqrt(dx * dx + dy * dy);
+          
+          if (lineLength > 30) {
+            const angleRad = Math.atan2(dy, dx);
+            const angleDeg = angleRad * (180 / Math.PI);
+            
+            const midX = (startX + endX) / 2;
+            const midY = (startY + endY) / 2;
+            
+            ctx.fillStyle = 'rgba(156, 39, 176, 0.9)';
+            ctx.fillRect(midX - 40, midY - 20, 80, 30);
+            ctx.fillStyle = 'white';
+            ctx.font = `bold 14px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${angleDeg.toFixed(1)}°`, midX, midY);
+          }
+        } else {
+          ctx.stroke();
+          
+          ctx.fillStyle = '#9C27B0';
+          ctx.beginPath();
+          ctx.arc(startX, startY, 5 * uiScale, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+        ctx.restore();
       }
-
-      ctx.restore();
-    }
-
-    // Draw angled baselines
-    if (angledBaselines.length > 0 || (isAngledBaselineMode && (angledBaselineLineStart || tempAngledBaselinePos))) {
-      ctx.save();
-
-      angledBaselines.forEach((baseline) => {
-        const angleRad = baseline.angle * (Math.PI / 180);
-        const centerX = (baseline.start.x + baseline.end.x) / 2;
-        const centerY = (baseline.start.y + baseline.end.y) / 2;
-
-        const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, image.width, image.height);
-        const extendedStart = extended.start;
-        const extendedEnd = extended.end;
-
-        ctx.strokeStyle = baseline.color;
-        ctx.lineWidth = 2;
-        ctx.setLineDash([10, 5]);
-        ctx.beginPath();
-        ctx.moveTo(extendedStart.x + offsetX, extendedStart.y + offsetY);
-        ctx.lineTo(extendedEnd.x + offsetX, extendedEnd.y + offsetY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.fillStyle = baseline.color;
-        ctx.font = `500 12px Antarctica, sans-serif`;
-        const midX = centerX + offsetX;
-        const midY = centerY + offsetY;
-        ctx.fillText(`Angled ${baseline.id} (${baseline.angle.toFixed(1)}°)`, midX + 5, midY - 5);
-      });
-
-      if (isAngledBaselineMode) {
-        if (angledBaselines.length === 0 && angledBaselineLineStart && angledBaselineLineEnd) {
-          const dx = angledBaselineLineEnd.x - angledBaselineLineStart.x;
-          const dy = angledBaselineLineEnd.y - angledBaselineLineStart.y;
-          const angleRad = Math.atan2(dy, dx);
-          const angleDeg = angleRad * (180 / Math.PI);
-
-          const centerX = (angledBaselineLineStart.x + angledBaselineLineEnd.x) / 2;
-          const centerY = (angledBaselineLineStart.y + angledBaselineLineEnd.y) / 2;
-
+      
+      // Draw baselines
+      if (baselines.length > 0 || (isBaselineMode && tempBaselineY !== null)) {
+        ctx.save();
+        
+        baselines.forEach((baseline) => {
+          const drawY = baseline.y + offsetY;
+          
+          ctx.strokeStyle = baseline.color;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([10, 5]);
+          ctx.beginPath();
+          ctx.moveTo(0, drawY);
+          ctx.lineTo(canvasWidth, drawY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          
+          ctx.fillStyle = baseline.color;
+          ctx.font = `500 12px Antarctica, sans-serif`;
+          ctx.fillText(`Baseline ${baseline.id}`, 5, drawY - 5);
+        });
+        
+        if (isBaselineMode && tempBaselineY !== null) {
+          const drawY = tempBaselineY + offsetY;
+          
+          ctx.strokeStyle = '#FF9800';
+          ctx.lineWidth = 3 * uiScale;
+          ctx.setLineDash([10, 5]);
+          ctx.beginPath();
+          ctx.moveTo(0, drawY);
+          ctx.lineTo(canvasWidth, drawY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          
+          ctx.fillStyle = '#FF9800';
+          ctx.font = `500 14px Antarctica, sans-serif`;
+          ctx.fillText('New Baseline', 5, drawY - 5);
+        }
+        
+        ctx.restore();
+      }
+      
+      // Draw angled baselines
+      if (angledBaselines.length > 0 || (isAngledBaselineMode && (angledBaselineLineStart || tempAngledBaselinePos))) {
+        ctx.save();
+        
+        angledBaselines.forEach((baseline) => {
+          const angleRad = baseline.angle * (Math.PI / 180);
+          const centerX = (baseline.start.x + baseline.end.x) / 2;
+          const centerY = (baseline.start.y + baseline.end.y) / 2;
+          
           const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, image.width, image.height);
           const extendedStart = extended.start;
           const extendedEnd = extended.end;
-
-          ctx.strokeStyle = '#FF9800';
-          ctx.lineWidth = 3 * uiScale;
+          
+          ctx.strokeStyle = baseline.color;
+          ctx.lineWidth = 2;
           ctx.setLineDash([10, 5]);
           ctx.beginPath();
           ctx.moveTo(extendedStart.x + offsetX, extendedStart.y + offsetY);
           ctx.lineTo(extendedEnd.x + offsetX, extendedEnd.y + offsetY);
           ctx.stroke();
           ctx.setLineDash([]);
-
-          ctx.fillStyle = '#FF9800';
-          ctx.font = `500 14px Antarctica, sans-serif`;
-          ctx.fillText(`${angleDeg.toFixed(1)}°`, centerX + offsetX + 5, centerY + offsetY - 5);
+          
+          ctx.fillStyle = baseline.color;
+          ctx.font = `500 12px Antarctica, sans-serif`;
+          const midX = centerX + offsetX;
+          const midY = centerY + offsetY;
+          ctx.fillText(`Angled ${baseline.id} (${baseline.angle.toFixed(1)}°)`, midX + 5, midY - 5);
+        });
+        
+        if (isAngledBaselineMode) {
+          if (angledBaselines.length === 0 && angledBaselineLineStart && angledBaselineLineEnd) {
+            const dx = angledBaselineLineEnd.x - angledBaselineLineStart.x;
+            const dy = angledBaselineLineEnd.y - angledBaselineLineStart.y;
+            const angleRad = Math.atan2(dy, dx);
+            const angleDeg = angleRad * (180 / Math.PI);
+            
+            const centerX = (angledBaselineLineStart.x + angledBaselineLineEnd.x) / 2;
+            const centerY = (angledBaselineLineStart.y + angledBaselineLineEnd.y) / 2;
+            
+            const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, image.width, image.height);
+            const extendedStart = extended.start;
+            const extendedEnd = extended.end;
+            
+            ctx.strokeStyle = '#FF9800';
+            ctx.lineWidth = 3 * uiScale;
+            ctx.setLineDash([10, 5]);
+            ctx.beginPath();
+            ctx.moveTo(extendedStart.x + offsetX, extendedStart.y + offsetY);
+            ctx.lineTo(extendedEnd.x + offsetX, extendedEnd.y + offsetY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            ctx.fillStyle = '#FF9800';
+            ctx.font = `500 14px Antarctica, sans-serif`;
+            ctx.fillText(`${angleDeg.toFixed(1)}°`, centerX + offsetX + 5, centerY + offsetY - 5);
+          }
+          else if (angledBaselines.length > 0 && tempAngledBaselinePos) {
+            const lastBaseline = angledBaselines[angledBaselines.length - 1];
+            const angleRad = lastBaseline.angle * (Math.PI / 180);
+            
+            const extended = extendLineToCanvasEdges(
+              tempAngledBaselinePos.x,
+              tempAngledBaselinePos.y,
+              angleRad,
+              image.width,
+              image.height
+            );
+            const start = extended.start;
+            const end = extended.end;
+            
+            ctx.strokeStyle = '#FF9800';
+            ctx.lineWidth = 3 * uiScale;
+            ctx.setLineDash([10, 5]);
+            ctx.beginPath();
+            ctx.moveTo(start.x + offsetX, start.y + offsetY);
+            ctx.lineTo(end.x + offsetX, end.y + offsetY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            ctx.fillStyle = '#FF9800';
+            ctx.font = `500 14px Antarctica, sans-serif`;
+            ctx.fillText('New Angled Baseline', tempAngledBaselinePos.x + offsetX + 5, tempAngledBaselinePos.y + offsetY - 5);
+          }
         }
-        else if (angledBaselines.length > 0 && tempAngledBaselinePos) {
-          const lastBaseline = angledBaselines[angledBaselines.length - 1];
-          const angleRad = lastBaseline.angle * (Math.PI / 180);
-
-          const extended = extendLineToCanvasEdges(
-            tempAngledBaselinePos.x,
-            tempAngledBaselinePos.y,
-            angleRad,
-            image.width,
-            image.height
-          );
-          const start = extended.start;
-          const end = extended.end;
-
-          ctx.strokeStyle = '#FF9800';
-          ctx.lineWidth = 3 * uiScale;
-          ctx.setLineDash([10, 5]);
-          ctx.beginPath();
-          ctx.moveTo(start.x + offsetX, start.y + offsetY);
-          ctx.lineTo(end.x + offsetX, end.y + offsetY);
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          ctx.fillStyle = '#FF9800';
-          ctx.font = `500 14px Antarctica, sans-serif`;
-          ctx.fillText('New Angled Baseline', tempAngledBaselinePos.x + offsetX + 5, tempAngledBaselinePos.y + offsetY - 5);
-        }
+        
+        ctx.restore();
       }
-
-      ctx.restore();
-    }
-  });
-
-  return () => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
-  };
-}, [
-  image, boxes, currentBox, selectedBox, hoveredBox, zoomLevel, 
-  isSelectingAutoSolveRegion, autoSolveRegions, currentAutoSolveRegion,
-  isBrushBoxMode, brushStrokes, currentStroke, brushBoxSize, mousePos, 
-  isDrawing, imageRotation, isRotationMode, rotationLineStart, rotationLineEnd,
-  baselines, isBaselineMode, tempBaselineY, angledBaselines, isAngledBaselineMode,
-  angledBaselineLineStart, angledBaselineLineEnd, tempAngledBaselinePos,
-  uniqueChars, currentCharIndex, selectedVariants
-]);
+    });
+    
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [
+    image, boxes, currentBox, selectedBox, hoveredBox, zoomLevel, 
+    isSelectingAutoSolveRegion, autoSolveRegions, currentAutoSolveRegion,
+    isBrushBoxMode, brushStrokes, currentStroke, brushBoxSize, mousePos, 
+    isDrawing, imageRotation, isRotationMode, rotationLineStart, rotationLineEnd,
+    baselines, isBaselineMode, tempBaselineY, angledBaselines, isAngledBaselineMode,
+    angledBaselineLineStart, angledBaselineLineEnd, tempAngledBaselinePos,
+    uniqueChars, currentCharIndex, selectedVariants
+  ]);
   const getMousePos = useCallback((e) => {
     const canvas = canvasRef.current;
     if (!canvas || !image) return { x: 0, y: 0 };
@@ -1073,7 +1074,11 @@ useEffect(() => {
     
     // Update mouse position for brush cursor preview
     if (isBrushBoxMode) {
-      setMousePos(pos);
+      const now = performance.now();
+      if (now - lastMouseUpdateRef.current > 16) { // ~60fps max
+        setMousePos(pos);
+        lastMouseUpdateRef.current = now;
+      }
     }
     
     // Detect hover state for cursor and highlighting (only when in pointer mode and not drawing/dragging)
