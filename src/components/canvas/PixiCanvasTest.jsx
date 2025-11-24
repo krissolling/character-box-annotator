@@ -38,6 +38,12 @@ export default function PixiCanvasTest() {
   const setRotationLineEnd = useAnnotatorStore(state => state.setRotationLineEnd);
   const rotationLineStart = useAnnotatorStore(state => state.rotationLineStart);
   const rotationLineEnd = useAnnotatorStore(state => state.rotationLineEnd);
+  const angledBaselineLineStart = useAnnotatorStore(state => state.angledBaselineLineStart);
+  const angledBaselineLineEnd = useAnnotatorStore(state => state.angledBaselineLineEnd);
+  const tempAngledBaselinePos = useAnnotatorStore(state => state.tempAngledBaselinePos);
+  const setAngledBaselineLineStart = useAnnotatorStore(state => state.setAngledBaselineLineStart);
+  const setAngledBaselineLineEnd = useAnnotatorStore(state => state.setAngledBaselineLineEnd);
+  const setTempAngledBaselinePos = useAnnotatorStore(state => state.setTempAngledBaselinePos);
 
   const renderer = usePixiRenderer({
     tileSize: 512,
@@ -164,14 +170,39 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Handle line drawing (angled baseline or rotation)
-    if (isDrawingLine && lineStart) {
-      setLineEnd({ x: imageX, y: imageY });
+    // Handle angled baseline hover/drawing
+    if (currentTool === 'angled') {
+      if (angledBaselines.length === 0 && isDrawingLine && lineStart) {
+        // First baseline: drawing the line to set angle
+        setLineEnd({ x: imageX, y: imageY });
+        setAngledBaselineLineEnd({ x: imageX, y: imageY });
 
-      // Store in Zustand for rotation tool
-      if (currentTool === 'rotate') {
-        setRotationLineEnd({ x: imageX, y: imageY });
+        pixiRenderer.setOverlayData({
+          drawingLine: {
+            start: lineStart,
+            end: { x: imageX, y: imageY },
+            tool: 'angled'
+          }
+        });
+      } else if (angledBaselines.length > 0 && !isDrawingLine) {
+        // Subsequent baselines: show preview at cursor with locked angle
+        setTempAngledBaselinePos({ x: imageX, y: imageY });
+
+        const lastBaseline = angledBaselines[angledBaselines.length - 1];
+        pixiRenderer.setOverlayData({
+          tempAngledBaseline: {
+            pos: { x: imageX, y: imageY },
+            angle: lastBaseline.angle
+          }
+        });
       }
+      return;
+    }
+
+    // Handle rotation line drawing
+    if (currentTool === 'rotate' && isDrawingLine && lineStart) {
+      setLineEnd({ x: imageX, y: imageY });
+      setRotationLineEnd({ x: imageX, y: imageY });
 
       // Update overlay to show the line being drawn
       if (pixiRenderer) {
@@ -179,7 +210,7 @@ export default function PixiCanvasTest() {
           drawingLine: {
             start: lineStart,
             end: { x: imageX, y: imageY },
-            tool: currentTool // 'angled' or 'rotate'
+            tool: 'rotate'
           }
         });
       }
@@ -531,11 +562,36 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Handle angled baseline tool (draw line)
+    // Handle angled baseline tool
     if (currentTool === 'angled') {
-      setIsDrawingLine(true);
-      setLineStart({ x: imageX, y: imageY });
-      setLineEnd({ x: imageX, y: imageY });
+      if (angledBaselines.length === 0) {
+        // First baseline: start drawing a line to set angle
+        setIsDrawingLine(true);
+        setLineStart({ x: imageX, y: imageY });
+        setLineEnd({ x: imageX, y: imageY });
+        setAngledBaselineLineStart({ x: imageX, y: imageY });
+        setAngledBaselineLineEnd({ x: imageX, y: imageY });
+      } else {
+        // Subsequent baselines: add at cursor with locked angle
+        const lastBaseline = angledBaselines[angledBaselines.length - 1];
+        const angleRad = lastBaseline.angle * (Math.PI / 180);
+
+        // Calculate extended line in both directions
+        const extendLength = (renderer.getRenderer()?.sourceImage?.width || 10000) * 2;
+        const dirX = Math.cos(angleRad);
+        const dirY = Math.sin(angleRad);
+
+        const start = {
+          x: imageX - dirX * extendLength,
+          y: imageY - dirY * extendLength
+        };
+        const end = {
+          x: imageX + dirX * extendLength,
+          y: imageY + dirY * extendLength
+        };
+
+        addAngledBaseline(start, end, lastBaseline.angle);
+      }
       return;
     }
 

@@ -690,6 +690,37 @@ export class PixiRenderer {
       this.overlayLayer.addChild(graphics);
     }
 
+    // Render temporary angled baseline (locked angle from first baseline)
+    if (overlayData.tempAngledBaseline) {
+      const { pos, angle } = overlayData.tempAngledBaseline;
+      const angleRad = angle * (Math.PI / 180);
+      const graphics = new PIXI.Graphics();
+
+      // Calculate extended line
+      const extendLength = (this.sourceImage?.width || 10000) * 2;
+      const dirX = Math.cos(angleRad);
+      const dirY = Math.sin(angleRad);
+
+      const start = {
+        x: pos.x - dirX * extendLength,
+        y: pos.y - dirY * extendLength
+      };
+      const end = {
+        x: pos.x + dirX * extendLength,
+        y: pos.y + dirY * extendLength
+      };
+
+      graphics.moveTo(start.x, start.y);
+      graphics.lineTo(end.x, end.y);
+      graphics.stroke({
+        width: 2 / scale,
+        color: 0xFF9800,
+        alpha: 0.5 // Slightly more transparent to indicate template mode
+      });
+
+      this.overlayLayer.addChild(graphics);
+    }
+
     // Render line being drawn (angled baseline or rotation)
     if (overlayData.drawingLine) {
       const { start, end, tool } = overlayData.drawingLine;
