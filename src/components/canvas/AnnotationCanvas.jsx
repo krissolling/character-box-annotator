@@ -4,14 +4,19 @@ import ToolPalette from './ToolPalette';
 import RightModePanel from './RightModePanel';
 
 export default function AnnotationCanvas() {
-  const canvasRef = useRef(null);
+  const imageCanvasRef = useRef(null);
+  const boxesCanvasRef = useRef(null);
+  const overlayCanvasRef = useRef(null);
   const containerRef = useRef(null);
   const lastMouseUpdateRef = useRef(0);
+  const boxesAnimationFrameRef = useRef(null);
+  const overlayAnimationFrameRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentBox, setCurrentBox] = useState(null);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [currentStroke, setCurrentStroke] = useState([]);
+  const [draggedBoxPreview, setDraggedBoxPreview] = useState(null); // Preview of dragged/resized box
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [hoveredBox, setHoveredBox] = useState(null);
   const [hoverCorner, setHoverCorner] = useState(null);
@@ -322,32 +327,78 @@ export default function AnnotationCanvas() {
     startZoomMode
   ]);
   
-  
-  
-  // Replace your entire drawing useEffect with this:
+
+
+  // Image Layer - Only redraws when image or rotation changes
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = imageCanvasRef.current;
     if (!canvas || !image) return;
-    
-    // Cancel any pending frame
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio * 2 || 1;
+
+    // Calculate canvas size to fit rotated image without clipping
+    const angleRad = Math.abs(imageRotation * Math.PI / 180);
+    const cos = Math.abs(Math.cos(angleRad));
+    const sin = Math.abs(Math.sin(angleRad));
+
+    // Bounding box of rotated rectangle
+    const canvasWidth = Math.ceil(image.width * cos + image.height * sin);
+    const canvasHeight = Math.ceil(image.height * cos + image.width * sin);
+
+    canvas.width = canvasWidth * dpr;
+    canvas.height = canvasHeight * dpr;
+    canvas.style.width = `${canvasWidth}px`;
+    canvas.style.height = `${canvasHeight}px`;
+
+    ctx.scale(dpr, dpr);
+
+    // Apply rotation
+    ctx.save();
+
+    // Calculate offset to center the image in the larger canvas
+    const offsetX = (canvasWidth - image.width) / 2;
+    const offsetY = (canvasHeight - image.height) / 2;
+
+    // Apply rotation if set
+    if (imageRotation !== 0) {
+      const centerX = canvasWidth / 2;
+      const centerY = canvasHeight / 2;
+      ctx.translate(centerX, centerY);
+      ctx.rotate(imageRotation * Math.PI / 180);
+      ctx.translate(-centerX, -centerY);
     }
-    
+
+    // Draw image centered in the larger canvas
+    ctx.drawImage(image, offsetX, offsetY, image.width, image.height);
+
+    ctx.restore();
+  }, [image, imageRotation]); // Minimal dependencies - only redraw when image or rotation changes
+
+  // Boxes Layer - Redraws boxes, baselines, and completed brush strokes
+  useEffect(() => {
+    const canvas = boxesCanvasRef.current;
+    if (!canvas || !image) return;
+
+    // Cancel any pending frame
+    if (boxesAnimationFrameRef.current) {
+      cancelAnimationFrame(boxesAnimationFrameRef.current);
+    }
+
     // Schedule draw on next frame (batches rapid state changes)
-    animationFrameRef.current = requestAnimationFrame(() => {
+    boxesAnimationFrameRef.current = requestAnimationFrame(() => {
       const ctx = canvas.getContext('2d');
       const dpr = window.devicePixelRatio * 2 || 1;
-      
+
       // Calculate canvas size to fit rotated image without clipping
       const angleRad = Math.abs(imageRotation * Math.PI / 180);
       const cos = Math.abs(Math.cos(angleRad));
       const sin = Math.abs(Math.sin(angleRad));
-      
+
       // Bounding box of rotated rectangle
       const canvasWidth = Math.ceil(image.width * cos + image.height * sin);
       const canvasHeight = Math.ceil(image.height * cos + image.width * sin);
-      
+
       // Helper function to extend line to canvas edges
       const extendLineToCanvasEdges = (centerX, centerY, angleRad, canvasWidth, canvasHeight) => {
         const cos = Math.cos(angleRad);
@@ -414,31 +465,17 @@ export default function AnnotationCanvas() {
       canvas.height = canvasHeight * dpr;
       canvas.style.width = `${canvasWidth}px`;
       canvas.style.height = `${canvasHeight}px`;
-      
+
       ctx.scale(dpr, dpr);
-      
-      // Apply rotation (without pan - pan is applied via CSS transform)
-      ctx.save();
-      
-      // Calculate offset to center the image in the larger canvas
+
+      // Clear the canvas (transparent layer)
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+      // Calculate offset to center content in the larger canvas
       const offsetX = (canvasWidth - image.width) / 2;
       const offsetY = (canvasHeight - image.height) / 2;
-      
-      // Apply rotation if set
-      if (imageRotation !== 0) {
-        const centerX = canvasWidth / 2;
-        const centerY = canvasHeight / 2;
-        ctx.translate(centerX, centerY);
-        ctx.rotate(imageRotation * Math.PI / 180);
-        ctx.translate(-centerX, -centerY);
-      }
-      
-      // Draw image centered in the larger canvas
-      ctx.drawImage(image, offsetX, offsetY, image.width, image.height);
-      
-      ctx.restore();
-      
-      // Draw existing boxes (scaled for zoom) - OUTSIDE rotation transform
+
+      // Draw existing boxes (scaled for zoom)
       // UI sizes are divided by zoomLevel to remain constant on screen
       const uiScale = 1 / zoomLevel;
       
@@ -446,9 +483,14 @@ export default function AnnotationCanvas() {
         const isSelected = selectedBox === index;
         const isHovered = hoveredBox === index && !isSelected;
         const isOrphaned = !uniqueChars.includes(box.char);
-        
+
         // Skip rendering orphaned boxes
         if (isOrphaned) {
+          return;
+        }
+
+        // Skip rendering the box being dragged/resized (it's shown in overlay layer)
+        if (draggedBoxPreview && draggedBoxPreview.index === index) {
           return;
         }
         
@@ -543,93 +585,20 @@ export default function AnnotationCanvas() {
         }
       });
       
-      // Draw current box being drawn
-      if (currentBox) {
+      // Draw completed brush strokes (keep these in boxes layer)
+      if (brushStrokes.length > 0) {
         ctx.save();
-        const drawX = currentBox.x + offsetX;
-        const drawY = currentBox.y + offsetY;
-        
-        ctx.strokeStyle = '#FF9800';
-        ctx.lineWidth = 2 * uiScale;
-        ctx.setLineDash([5 * uiScale, 5 * uiScale]);
-        ctx.strokeRect(drawX, drawY, currentBox.width, currentBox.height);
-        ctx.setLineDash([]);
-        
-        const currentChar = uniqueChars[currentCharIndex];
-        if (currentChar) {
-          ctx.fillStyle = '#FF9800';
-          const fontSize = 16 * uiScale;
-          ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
-          
-          const labelPadding = 4 * uiScale;
-          const labelHeight = fontSize;
-          let labelX = drawX + labelPadding;
-          let labelY = drawY + labelHeight + labelPadding;
-          
-          if (currentBox.y < labelHeight + labelPadding + 5 * uiScale) {
-            labelY = (drawY + currentBox.height) + labelHeight + labelPadding;
-          }
-          
-          if (currentBox.x < labelPadding) {
-            labelX = offsetX + labelPadding;
-          }
-          
-          ctx.fillText(currentChar, labelX, labelY);
-        }
-        
-        ctx.restore();
-      }
-      
-      // Draw auto-solve regions
-      if (isSelectingAutoSolveRegion) {
-        ctx.save();
-        
-        autoSolveRegions.forEach((region, index) => {
-          const drawX = region.x + offsetX;
-          const drawY = region.y + offsetY;
-          
-          ctx.strokeStyle = '#2196F3';
-          ctx.lineWidth = 3 * uiScale;
-          ctx.strokeRect(drawX, drawY, region.width, region.height);
-          ctx.fillStyle = 'rgba(33, 150, 243, 0.1)';
-          ctx.fillRect(drawX, drawY, region.width, region.height);
-          
-          ctx.fillStyle = '#2196F3';
-          const fontSize = 20 * uiScale;
-          ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
-          ctx.fillText(`${index + 1}`, drawX + 8 * uiScale, drawY + 28 * uiScale);
-        });
-        
-        if (currentAutoSolveRegion && currentAutoSolveRegion.width > 0 && currentAutoSolveRegion.height > 0) {
-          const drawX = currentAutoSolveRegion.x + offsetX;
-          const drawY = currentAutoSolveRegion.y + offsetY;
-          
-          ctx.strokeStyle = '#FF9800';
-          ctx.lineWidth = 3 * uiScale;
-          ctx.setLineDash([8 * uiScale, 8 * uiScale]);
-          ctx.strokeRect(drawX, drawY, currentAutoSolveRegion.width, currentAutoSolveRegion.height);
-          ctx.fillStyle = 'rgba(255, 152, 0, 0.1)';
-          ctx.fillRect(drawX, drawY, currentAutoSolveRegion.width, currentAutoSolveRegion.height);
-          ctx.setLineDash([]);
-        }
-        
-        ctx.restore();
-      }
-      
-      // Draw brush strokes
-      if (isBrushBoxMode) {
-        ctx.save();
-        
+
         brushStrokes.forEach((stroke) => {
           const points = stroke.points || stroke;
           const strokeSize = stroke.size || brushBoxSize;
-          
+
           if (points.length > 0) {
             ctx.strokeStyle = 'rgba(76, 175, 80, 0.6)';
             ctx.lineWidth = strokeSize;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            
+
             ctx.beginPath();
             ctx.moveTo(points[0].x + offsetX, points[0].y + offsetY);
             for (let i = 1; i < points.length; i++) {
@@ -638,97 +607,17 @@ export default function AnnotationCanvas() {
             ctx.stroke();
           }
         });
-        
-        if (currentStroke.length > 0) {
-          ctx.strokeStyle = 'rgba(33, 150, 243, 0.8)';
-          ctx.lineWidth = brushBoxSize;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          
-          ctx.beginPath();
-          ctx.moveTo(currentStroke[0].x + offsetX, currentStroke[0].y + offsetY);
-          for (let i = 1; i < currentStroke.length; i++) {
-            ctx.lineTo(currentStroke[i].x + offsetX, currentStroke[i].y + offsetY);
-          }
-          ctx.stroke();
-        }
-        
-        if (mousePos.x > 0 && mousePos.y > 0 && !isDrawing) {
-          ctx.strokeStyle = '#4CAF50';
-          ctx.lineWidth = 2 * uiScale;
-          ctx.beginPath();
-          ctx.arc(mousePos.x + offsetX, mousePos.y + offsetY, (brushBoxSize / 2), 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        
+
         ctx.restore();
       }
-      
-      // Draw rotation line
-      if (isRotationMode && rotationLineStart) {
-        ctx.save();
-        
-        const startX = rotationLineStart.x + offsetX;
-        const startY = rotationLineStart.y + offsetY;
-        
-        ctx.strokeStyle = '#9C27B0';
-        ctx.lineWidth = 3 * uiScale;
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        
-        if (rotationLineEnd) {
-          const endX = rotationLineEnd.x + offsetX;
-          const endY = rotationLineEnd.y + offsetY;
-          ctx.lineTo(endX, endY);
-          ctx.stroke();
-          
-          ctx.fillStyle = '#9C27B0';
-          ctx.beginPath();
-          ctx.arc(startX, startY, 5 * uiScale, 0, Math.PI * 2);
-          ctx.fill();
-          
-          ctx.beginPath();
-          ctx.arc(endX, endY, 5 * uiScale, 0, Math.PI * 2);
-          ctx.fill();
-          
-          const dx = rotationLineEnd.x - rotationLineStart.x;
-          const dy = rotationLineEnd.y - rotationLineStart.y;
-          const lineLength = Math.sqrt(dx * dx + dy * dy);
-          
-          if (lineLength > 30) {
-            const angleRad = Math.atan2(dy, dx);
-            const angleDeg = angleRad * (180 / Math.PI);
-            
-            const midX = (startX + endX) / 2;
-            const midY = (startY + endY) / 2;
-            
-            ctx.fillStyle = 'rgba(156, 39, 176, 0.9)';
-            ctx.fillRect(midX - 40, midY - 20, 80, 30);
-            ctx.fillStyle = 'white';
-            ctx.font = `bold 14px sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(`${angleDeg.toFixed(1)}°`, midX, midY);
-          }
-        } else {
-          ctx.stroke();
-          
-          ctx.fillStyle = '#9C27B0';
-          ctx.beginPath();
-          ctx.arc(startX, startY, 5 * uiScale, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        
-        ctx.restore();
-      }
-      
+
       // Draw baselines
-      if (baselines.length > 0 || (isBaselineMode && tempBaselineY !== null)) {
+      if (baselines.length > 0) {
         ctx.save();
         
         baselines.forEach((baseline) => {
           const drawY = baseline.y + offsetY;
-          
+
           ctx.strokeStyle = baseline.color;
           ctx.lineWidth = 2;
           ctx.setLineDash([10, 5]);
@@ -737,34 +626,17 @@ export default function AnnotationCanvas() {
           ctx.lineTo(canvasWidth, drawY);
           ctx.stroke();
           ctx.setLineDash([]);
-          
+
           ctx.fillStyle = baseline.color;
           ctx.font = `500 12px Antarctica, sans-serif`;
           ctx.fillText(`Baseline ${baseline.id}`, 5, drawY - 5);
         });
-        
-        if (isBaselineMode && tempBaselineY !== null) {
-          const drawY = tempBaselineY + offsetY;
-          
-          ctx.strokeStyle = '#FF9800';
-          ctx.lineWidth = 3 * uiScale;
-          ctx.setLineDash([10, 5]);
-          ctx.beginPath();
-          ctx.moveTo(0, drawY);
-          ctx.lineTo(canvasWidth, drawY);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          
-          ctx.fillStyle = '#FF9800';
-          ctx.font = `500 14px Antarctica, sans-serif`;
-          ctx.fillText('New Baseline', 5, drawY - 5);
-        }
-        
+
         ctx.restore();
       }
-      
+
       // Draw angled baselines
-      if (angledBaselines.length > 0 || (isAngledBaselineMode && (angledBaselineLineStart || tempAngledBaselinePos))) {
+      if (angledBaselines.length > 0) {
         ctx.save();
         
         angledBaselines.forEach((baseline) => {
@@ -791,85 +663,430 @@ export default function AnnotationCanvas() {
           const midY = centerY + offsetY;
           ctx.fillText(`Angled ${baseline.id} (${baseline.angle.toFixed(1)}°)`, midX + 5, midY - 5);
         });
-        
-        if (isAngledBaselineMode) {
-          if (angledBaselines.length === 0 && angledBaselineLineStart && angledBaselineLineEnd) {
-            const dx = angledBaselineLineEnd.x - angledBaselineLineStart.x;
-            const dy = angledBaselineLineEnd.y - angledBaselineLineStart.y;
-            const angleRad = Math.atan2(dy, dx);
-            const angleDeg = angleRad * (180 / Math.PI);
-            
-            const centerX = (angledBaselineLineStart.x + angledBaselineLineEnd.x) / 2;
-            const centerY = (angledBaselineLineStart.y + angledBaselineLineEnd.y) / 2;
-            
-            const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, image.width, image.height);
-            const extendedStart = extended.start;
-            const extendedEnd = extended.end;
-            
-            ctx.strokeStyle = '#FF9800';
-            ctx.lineWidth = 3 * uiScale;
-            ctx.setLineDash([10, 5]);
-            ctx.beginPath();
-            ctx.moveTo(extendedStart.x + offsetX, extendedStart.y + offsetY);
-            ctx.lineTo(extendedEnd.x + offsetX, extendedEnd.y + offsetY);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            ctx.fillStyle = '#FF9800';
-            ctx.font = `500 14px Antarctica, sans-serif`;
-            ctx.fillText(`${angleDeg.toFixed(1)}°`, centerX + offsetX + 5, centerY + offsetY - 5);
-          }
-          else if (angledBaselines.length > 0 && tempAngledBaselinePos) {
-            const lastBaseline = angledBaselines[angledBaselines.length - 1];
-            const angleRad = lastBaseline.angle * (Math.PI / 180);
-            
-            const extended = extendLineToCanvasEdges(
-              tempAngledBaselinePos.x,
-              tempAngledBaselinePos.y,
-              angleRad,
-              image.width,
-              image.height
-            );
-            const start = extended.start;
-            const end = extended.end;
-            
-            ctx.strokeStyle = '#FF9800';
-            ctx.lineWidth = 3 * uiScale;
-            ctx.setLineDash([10, 5]);
-            ctx.beginPath();
-            ctx.moveTo(start.x + offsetX, start.y + offsetY);
-            ctx.lineTo(end.x + offsetX, end.y + offsetY);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            
-            ctx.fillStyle = '#FF9800';
-            ctx.font = `500 14px Antarctica, sans-serif`;
-            ctx.fillText('New Angled Baseline', tempAngledBaselinePos.x + offsetX + 5, tempAngledBaselinePos.y + offsetY - 5);
-          }
-        }
-        
+
         ctx.restore();
       }
     });
-    
+
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
+      if (boxesAnimationFrameRef.current) {
+        cancelAnimationFrame(boxesAnimationFrameRef.current);
       }
     };
   }, [
-    image, boxes, currentBox, selectedBox, hoveredBox, zoomLevel, 
+    image, boxes, selectedBox, zoomLevel,
+    brushStrokes, brushBoxSize,
+    imageRotation, baselines, angledBaselines,
+    uniqueChars, selectedVariants,
+    hoveredBox,  // Keep hoveredBox but the requestAnimationFrame batches rapid updates
+    draggedBoxPreview  // Add this so we know which box to skip
+  ]);
+
+  // Overlay Layer - Redraws interactive/temporary elements
+  useEffect(() => {
+    const canvas = overlayCanvasRef.current;
+    if (!canvas || !image) return;
+
+    // Cancel any pending frame
+    if (overlayAnimationFrameRef.current) {
+      cancelAnimationFrame(overlayAnimationFrameRef.current);
+    }
+
+    // Schedule draw on next frame (batches rapid state changes)
+    overlayAnimationFrameRef.current = requestAnimationFrame(() => {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio * 2 || 1;
+
+      // Calculate canvas size to fit rotated image without clipping
+      const angleRad = Math.abs(imageRotation * Math.PI / 180);
+      const cos = Math.abs(Math.cos(angleRad));
+      const sin = Math.abs(Math.sin(angleRad));
+
+      // Bounding box of rotated rectangle
+      const canvasWidth = Math.ceil(image.width * cos + image.height * sin);
+      const canvasHeight = Math.ceil(image.height * cos + image.width * sin);
+
+      // Helper function to extend line to canvas edges
+      const extendLineToCanvasEdges = (centerX, centerY, angleRad, canvasWidth, canvasHeight) => {
+        const cos = Math.cos(angleRad);
+        const sin = Math.sin(angleRad);
+
+        // Calculate intersections with all 4 edges
+        const intersections = [];
+
+        // Left edge (x = 0)
+        if (cos !== 0) {
+          const t = -centerX / cos;
+          const y = centerY + t * sin;
+          if (y >= 0 && y <= canvasHeight) {
+            intersections.push({ x: 0, y, t });
+          }
+        }
+
+        // Right edge (x = canvasWidth)
+        if (cos !== 0) {
+          const t = (canvasWidth - centerX) / cos;
+          const y = centerY + t * sin;
+          if (y >= 0 && y <= canvasHeight) {
+            intersections.push({ x: canvasWidth, y, t });
+          }
+        }
+
+        // Top edge (y = 0)
+        if (sin !== 0) {
+          const t = -centerY / sin;
+          const x = centerX + t * cos;
+          if (x >= 0 && x <= canvasWidth) {
+            intersections.push({ x, y: 0, t });
+          }
+        }
+
+        // Bottom edge (y = canvasHeight)
+        if (sin !== 0) {
+          const t = (canvasHeight - centerY) / sin;
+          const x = centerX + t * cos;
+          if (x >= 0 && x <= canvasHeight) {
+            intersections.push({ x, y: canvasHeight, t });
+          }
+        }
+
+        // Sort by parameter t (distance along line from center)
+        intersections.sort((a, b) => a.t - b.t);
+
+        // Return the two endpoints (one in each direction from center)
+        if (intersections.length >= 2) {
+          return {
+            start: { x: intersections[0].x, y: intersections[0].y },
+            end: { x: intersections[intersections.length - 1].x, y: intersections[intersections.length - 1].y }
+          };
+        }
+
+        // Fallback to original 2000px if something goes wrong
+        return {
+          start: { x: centerX - cos * 1000, y: centerY - sin * 1000 },
+          end: { x: centerX + cos * 1000, y: centerY + sin * 1000 }
+        };
+      };
+
+      canvas.width = canvasWidth * dpr;
+      canvas.height = canvasHeight * dpr;
+      canvas.style.width = `${canvasWidth}px`;
+      canvas.style.height = `${canvasHeight}px`;
+
+      ctx.scale(dpr, dpr);
+
+      // Clear the canvas (transparent layer)
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+      // Calculate offset to center content in the larger canvas
+      const offsetX = (canvasWidth - image.width) / 2;
+      const offsetY = (canvasHeight - image.height) / 2;
+
+      // UI sizes are divided by zoomLevel to remain constant on screen
+      const uiScale = 1 / zoomLevel;
+
+      // Draw current box being drawn
+      if (currentBox) {
+        ctx.save();
+        const drawX = currentBox.x + offsetX;
+        const drawY = currentBox.y + offsetY;
+
+        ctx.strokeStyle = '#FF9800';
+        ctx.lineWidth = 2 * uiScale;
+        ctx.setLineDash([5 * uiScale, 5 * uiScale]);
+        ctx.strokeRect(drawX, drawY, currentBox.width, currentBox.height);
+        ctx.setLineDash([]);
+
+        const currentChar = uniqueChars[currentCharIndex];
+        if (currentChar) {
+          ctx.fillStyle = '#FF9800';
+          const fontSize = 16 * uiScale;
+          ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
+
+          const labelPadding = 4 * uiScale;
+          const labelHeight = fontSize;
+          let labelX = drawX + labelPadding;
+          let labelY = drawY + labelHeight + labelPadding;
+
+          if (currentBox.y < labelHeight + labelPadding + 5 * uiScale) {
+            labelY = (drawY + currentBox.height) + labelHeight + labelPadding;
+          }
+
+          if (currentBox.x < labelPadding) {
+            labelX = offsetX + labelPadding;
+          }
+
+          ctx.fillText(currentChar, labelX, labelY);
+        }
+
+        ctx.restore();
+      }
+
+      // Draw auto-solve regions
+      if (isSelectingAutoSolveRegion) {
+        ctx.save();
+
+        autoSolveRegions.forEach((region, index) => {
+          const drawX = region.x + offsetX;
+          const drawY = region.y + offsetY;
+
+          ctx.strokeStyle = '#2196F3';
+          ctx.lineWidth = 3 * uiScale;
+          ctx.strokeRect(drawX, drawY, region.width, region.height);
+          ctx.fillStyle = 'rgba(33, 150, 243, 0.1)';
+          ctx.fillRect(drawX, drawY, region.width, region.height);
+
+          ctx.fillStyle = '#2196F3';
+          const fontSize = 20 * uiScale;
+          ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
+          ctx.fillText(`${index + 1}`, drawX + 8 * uiScale, drawY + 28 * uiScale);
+        });
+
+        if (currentAutoSolveRegion && currentAutoSolveRegion.width > 0 && currentAutoSolveRegion.height > 0) {
+          const drawX = currentAutoSolveRegion.x + offsetX;
+          const drawY = currentAutoSolveRegion.y + offsetY;
+
+          ctx.strokeStyle = '#FF9800';
+          ctx.lineWidth = 3 * uiScale;
+          ctx.setLineDash([8 * uiScale, 8 * uiScale]);
+          ctx.strokeRect(drawX, drawY, currentAutoSolveRegion.width, currentAutoSolveRegion.height);
+          ctx.fillStyle = 'rgba(255, 152, 0, 0.1)';
+          ctx.fillRect(drawX, drawY, currentAutoSolveRegion.width, currentAutoSolveRegion.height);
+          ctx.setLineDash([]);
+        }
+
+        ctx.restore();
+      }
+
+      // Draw current brush stroke and cursor
+      if (isBrushBoxMode) {
+        ctx.save();
+
+        if (currentStroke.length > 0) {
+          ctx.strokeStyle = 'rgba(33, 150, 243, 0.8)';
+          ctx.lineWidth = brushBoxSize;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+
+          ctx.beginPath();
+          ctx.moveTo(currentStroke[0].x + offsetX, currentStroke[0].y + offsetY);
+          for (let i = 1; i < currentStroke.length; i++) {
+            ctx.lineTo(currentStroke[i].x + offsetX, currentStroke[i].y + offsetY);
+          }
+          ctx.stroke();
+        }
+
+        if (mousePos.x > 0 && mousePos.y > 0 && !isDrawing) {
+          ctx.strokeStyle = '#4CAF50';
+          ctx.lineWidth = 2 * uiScale;
+          ctx.beginPath();
+          ctx.arc(mousePos.x + offsetX, mousePos.y + offsetY, (brushBoxSize / 2), 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      // Draw rotation line
+      if (isRotationMode && rotationLineStart) {
+        ctx.save();
+
+        const startX = rotationLineStart.x + offsetX;
+        const startY = rotationLineStart.y + offsetY;
+
+        ctx.strokeStyle = '#9C27B0';
+        ctx.lineWidth = 3 * uiScale;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+
+        if (rotationLineEnd) {
+          const endX = rotationLineEnd.x + offsetX;
+          const endY = rotationLineEnd.y + offsetY;
+          ctx.lineTo(endX, endY);
+          ctx.stroke();
+
+          ctx.fillStyle = '#9C27B0';
+          ctx.beginPath();
+          ctx.arc(startX, startY, 5 * uiScale, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(endX, endY, 5 * uiScale, 0, Math.PI * 2);
+          ctx.fill();
+
+          const dx = rotationLineEnd.x - rotationLineStart.x;
+          const dy = rotationLineEnd.y - rotationLineStart.y;
+          const lineLength = Math.sqrt(dx * dx + dy * dy);
+
+          if (lineLength > 30) {
+            const angleRad = Math.atan2(dy, dx);
+            const angleDeg = angleRad * (180 / Math.PI);
+
+            const midX = (startX + endX) / 2;
+            const midY = (startY + endY) / 2;
+
+            ctx.fillStyle = 'rgba(156, 39, 176, 0.9)';
+            ctx.fillRect(midX - 40, midY - 20, 80, 30);
+            ctx.fillStyle = 'white';
+            ctx.font = `bold 14px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${angleDeg.toFixed(1)}°`, midX, midY);
+          }
+        } else {
+          ctx.stroke();
+
+          ctx.fillStyle = '#9C27B0';
+          ctx.beginPath();
+          ctx.arc(startX, startY, 5 * uiScale, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+
+      // Draw temporary baseline
+      if (isBaselineMode && tempBaselineY !== null) {
+        ctx.save();
+
+        const drawY = tempBaselineY + offsetY;
+
+        ctx.strokeStyle = '#FF9800';
+        ctx.lineWidth = 3 * uiScale;
+        ctx.setLineDash([10, 5]);
+        ctx.beginPath();
+        ctx.moveTo(0, drawY);
+        ctx.lineTo(canvasWidth, drawY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = '#FF9800';
+        ctx.font = `500 14px Antarctica, sans-serif`;
+        ctx.fillText('New Baseline', 5, drawY - 5);
+
+        ctx.restore();
+      }
+
+      // Draw temporary angled baseline
+      if (isAngledBaselineMode) {
+        ctx.save();
+
+        if (angledBaselines.length === 0 && angledBaselineLineStart && angledBaselineLineEnd) {
+          const dx = angledBaselineLineEnd.x - angledBaselineLineStart.x;
+          const dy = angledBaselineLineEnd.y - angledBaselineLineStart.y;
+          const angleRad = Math.atan2(dy, dx);
+          const angleDeg = angleRad * (180 / Math.PI);
+
+          const centerX = (angledBaselineLineStart.x + angledBaselineLineEnd.x) / 2;
+          const centerY = (angledBaselineLineStart.y + angledBaselineLineEnd.y) / 2;
+
+          const extended = extendLineToCanvasEdges(centerX, centerY, angleRad, image.width, image.height);
+          const extendedStart = extended.start;
+          const extendedEnd = extended.end;
+
+          ctx.strokeStyle = '#FF9800';
+          ctx.lineWidth = 3 * uiScale;
+          ctx.setLineDash([10, 5]);
+          ctx.beginPath();
+          ctx.moveTo(extendedStart.x + offsetX, extendedStart.y + offsetY);
+          ctx.lineTo(extendedEnd.x + offsetX, extendedEnd.y + offsetY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = '#FF9800';
+          ctx.font = `500 14px Antarctica, sans-serif`;
+          ctx.fillText(`${angleDeg.toFixed(1)}°`, centerX + offsetX + 5, centerY + offsetY - 5);
+        }
+        else if (angledBaselines.length > 0 && tempAngledBaselinePos) {
+          const lastBaseline = angledBaselines[angledBaselines.length - 1];
+          const angleRad = lastBaseline.angle * (Math.PI / 180);
+
+          const extended = extendLineToCanvasEdges(
+            tempAngledBaselinePos.x,
+            tempAngledBaselinePos.y,
+            angleRad,
+            image.width,
+            image.height
+          );
+          const start = extended.start;
+          const end = extended.end;
+
+          ctx.strokeStyle = '#FF9800';
+          ctx.lineWidth = 3 * uiScale;
+          ctx.setLineDash([10, 5]);
+          ctx.beginPath();
+          ctx.moveTo(start.x + offsetX, start.y + offsetY);
+          ctx.lineTo(end.x + offsetX, end.y + offsetY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = '#FF9800';
+          ctx.font = `500 14px Antarctica, sans-serif`;
+          ctx.fillText('New Angled Baseline', tempAngledBaselinePos.x + offsetX + 5, tempAngledBaselinePos.y + offsetY - 5);
+        }
+
+        ctx.restore();
+      }
+
+      // Draw dragged/resized box preview
+      if (draggedBoxPreview) {
+        ctx.save();
+
+        const drawX = draggedBoxPreview.x + offsetX;
+        const drawY = draggedBoxPreview.y + offsetY;
+
+        // Get the actual box data for the character label
+        const actualBox = boxes[draggedBoxPreview.index];
+
+        ctx.strokeStyle = '#2196F3';
+        ctx.lineWidth = 3 * uiScale;
+        ctx.strokeRect(drawX, drawY, draggedBoxPreview.width, draggedBoxPreview.height);
+
+        // Draw character label
+        if (actualBox) {
+          ctx.fillStyle = '#2196F3';
+          const fontSize = 16 * uiScale;
+          ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
+
+          const labelPadding = 4 * uiScale;
+          const labelHeight = fontSize;
+          let labelX = drawX + labelPadding;
+          let labelY = drawY + labelHeight + labelPadding;
+
+          if (draggedBoxPreview.y < labelHeight + labelPadding + 5 * uiScale) {
+            labelY = (drawY + draggedBoxPreview.height) + labelHeight + labelPadding;
+          }
+
+          if (draggedBoxPreview.x < labelPadding) {
+            labelX = offsetX + labelPadding;
+          }
+
+          ctx.fillText(actualBox.char, labelX, labelY);
+        }
+
+        ctx.restore();
+      }
+    });
+
+    return () => {
+      if (overlayAnimationFrameRef.current) {
+        cancelAnimationFrame(overlayAnimationFrameRef.current);
+      }
+    };
+  }, [
+    image, currentBox, zoomLevel,
     isSelectingAutoSolveRegion, autoSolveRegions, currentAutoSolveRegion,
-    isBrushBoxMode, brushStrokes, currentStroke, brushBoxSize, mousePos, 
-    isDrawing, imageRotation, isRotationMode, rotationLineStart, rotationLineEnd,
-    baselines, isBaselineMode, tempBaselineY, angledBaselines, isAngledBaselineMode,
-    angledBaselineLineStart, angledBaselineLineEnd, tempAngledBaselinePos,
-    uniqueChars, currentCharIndex, selectedVariants
+    isBrushBoxMode, currentStroke, brushBoxSize, mousePos, isDrawing,
+    imageRotation, isRotationMode, rotationLineStart, rotationLineEnd,
+    isBaselineMode, tempBaselineY, isAngledBaselineMode,
+    angledBaselineLineStart, angledBaselineLineEnd, tempAngledBaselinePos, angledBaselines,
+    uniqueChars, currentCharIndex,
+    draggedBoxPreview, boxes  // Add draggedBoxPreview to dependencies
   ]);
   const getMousePos = useCallback((e) => {
-    const canvas = canvasRef.current;
+    const canvas = overlayCanvasRef.current;
     if (!canvas || !image) return { x: 0, y: 0 };
-    
+
     const rect = canvas.getBoundingClientRect();
     const angleRad = Math.abs(imageRotation * Math.PI / 180);
     const cos = Math.abs(Math.cos(angleRad));
@@ -1000,8 +1217,8 @@ export default function AnnotationCanvas() {
     }
     
     // Zoom mode - drag to zoom
-    if (isZoomMode && canvasRef.current) {
-      const rect = canvasRef.current.getBoundingClientRect();
+    if (isZoomMode && overlayCanvasRef.current) {
+      const rect = overlayCanvasRef.current.getBoundingClientRect();
       // Store client position for delta calculation and image position for zoom center
       const imageX = (e.clientX - rect.left) / zoomLevel;
       const imageY = (e.clientY - rect.top) / zoomLevel;
@@ -1283,19 +1500,23 @@ export default function AnnotationCanvas() {
       if (isDraggingBox && selectedBox !== null) {
         const dx = pos.x - dragStartPos.x;
         const dy = pos.y - dragStartPos.y;
-        updateBox(selectedBox, {
+        // Use preview state instead of updating store during drag
+        setDraggedBoxPreview({
+          index: selectedBox,
           x: boxStartPos.x + dx,
           y: boxStartPos.y + dy,
+          width: boxStartPos.width,
+          height: boxStartPos.height
         });
         return;
       }
-      
+
       // Handle box resizing
       if (isResizingBox && selectedBox !== null) {
         const box = { ...boxStartPos };
         const dx = pos.x - dragStartPos.x;
         const dy = pos.y - dragStartPos.y;
-        
+
         switch (resizeCorner) {
           case 'nw':
           box.x = boxStartPos.x + dx;
@@ -1333,10 +1554,13 @@ export default function AnnotationCanvas() {
           box.width = boxStartPos.width + dx;
           break;
         }
-        
-        // Ensure minimum size
+
+        // Ensure minimum size and use preview state
         if (box.width > 10 && box.height > 10) {
-          updateBox(selectedBox, box);
+          setDraggedBoxPreview({
+            index: selectedBox,
+            ...box
+          });
         }
         return;
       }
@@ -1527,11 +1751,29 @@ export default function AnnotationCanvas() {
         }
         
         if (isDraggingBox) {
+          // Commit the dragged box to store
+          if (draggedBoxPreview && selectedBox !== null) {
+            updateBox(selectedBox, {
+              x: draggedBoxPreview.x,
+              y: draggedBoxPreview.y
+            });
+          }
+          setDraggedBoxPreview(null);
           setIsDraggingBox(false);
           return;
         }
-        
+
         if (isResizingBox) {
+          // Commit the resized box to store
+          if (draggedBoxPreview && selectedBox !== null) {
+            updateBox(selectedBox, {
+              x: draggedBoxPreview.x,
+              y: draggedBoxPreview.y,
+              width: draggedBoxPreview.width,
+              height: draggedBoxPreview.height
+            });
+          }
+          setDraggedBoxPreview(null);
           setIsResizingBox(false, null);
           return;
         }
@@ -1684,8 +1926,8 @@ export default function AnnotationCanvas() {
           const newZoom = Math.max(minZoom, Math.min(4.0, zoomLevel + delta));
           
           // Zoom toward cursor position (react-zoom-pan-pinch approach)
-          if (canvasRef.current && newZoom !== zoomLevel) {
-            const canvas = canvasRef.current;
+          if (overlayCanvasRef.current && newZoom !== zoomLevel) {
+            const canvas = overlayCanvasRef.current;
             const rect = canvas.getBoundingClientRect();
             
             // Get mouse position relative to canvas in image coordinates
@@ -1762,10 +2004,21 @@ export default function AnnotationCanvas() {
           cursor: cursorStyle
         }}
         >
+        {/* Bottom layer: Image only */}
         <canvas
-        ref={canvasRef}
-        onClick={handleCanvasClick}
+        ref={imageCanvasRef}
         style={canvasStyle}
+        />
+        {/* Middle layer: Boxes, baselines, completed strokes */}
+        <canvas
+        ref={boxesCanvasRef}
+        style={{...canvasStyle, position: 'absolute', top: 0, left: 0, pointerEvents: 'none'}}
+        />
+        {/* Top layer: Interactive overlays (current box, current stroke, etc.) */}
+        <canvas
+        ref={overlayCanvasRef}
+        onClick={handleCanvasClick}
+        style={{...canvasStyle, position: 'absolute', top: 0, left: 0}}
         />
         </div>
         

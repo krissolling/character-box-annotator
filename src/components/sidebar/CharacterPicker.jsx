@@ -35,14 +35,6 @@ export default function CharacterPicker() {
   // Track if panel is hovered for edit button
   const [panelHovered, setPanelHovered] = useState(false);
 
-  if (uniqueChars.length === 0) return null;
-
-  // Count boxes per character
-  const charCounts = {};
-  boxes.forEach(box => {
-    charCounts[box.char] = (charCounts[box.char] || 0) + 1;
-  });
-
   const handleEditString = () => {
     const currentText = text || '';
     const newText = prompt('Edit the string to annotate:', currentText);
@@ -60,6 +52,35 @@ export default function CharacterPicker() {
       useAnnotatorStore.getState().updateTextOnly(newText);
     }
   };
+
+  // Show button to set text if no text has been set
+  if (uniqueChars.length === 0) {
+    return (
+      <div className="te-panel" style={{ padding: '12px', textAlign: 'center' }}>
+        <p style={{
+          fontSize: '12px',
+          color: 'var(--te-gray-dark)',
+          marginBottom: '8px',
+          fontVariationSettings: "'wght' 400"
+        }}>
+          No text string set
+        </p>
+        <button
+          onClick={handleEditString}
+          className="te-btn te-btn-primary"
+          style={{ width: '100%' }}
+        >
+          Set Text String
+        </button>
+      </div>
+    );
+  }
+
+  // Count boxes per character
+  const charCounts = {};
+  boxes.forEach(box => {
+    charCounts[box.char] = (charCounts[box.char] || 0) + 1;
+  });
 
   // Render a character box thumbnail to canvas
   const renderCharacterThumbnail = (canvasRef, box) => {
