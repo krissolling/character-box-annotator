@@ -17,7 +17,7 @@ export default function MainAnnotator() {
   const [previewWidth, setPreviewWidth] = useState(null); // Width in pixels based on aspect ratio
   const [isDragging, setIsDragging] = useState(false);
   const [eyedropperActive, setEyedropperActive] = useState(false);
-  const [useWebGLRenderer, setUseWebGLRenderer] = useState(false); // Toggle for WebGL renderer
+  const [useWebGLRenderer, setUseWebGLRenderer] = useState(true); // Toggle for WebGL renderer (default: true)
   const containerRef = useRef(null);
   const previewContainerRef = useRef(null);
 
