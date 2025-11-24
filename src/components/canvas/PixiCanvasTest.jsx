@@ -166,11 +166,11 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Handle baseline tool hover (show temporary baseline line)
-    if (currentTool === 'baseline' && !isDrawingLine) {
+    // Handle baseline tool dragging
+    if (currentTool === 'baseline' && isDrawingLine) {
       setTempBaselineY(imageY);
 
-      // Update overlay to show temp baseline
+      // Update overlay to show temp baseline being dragged
       if (pixiRenderer) {
         pixiRenderer.setOverlayData({
           tempBaseline: imageY
@@ -179,7 +179,7 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Handle angled baseline hover/drawing
+    // Handle angled baseline dragging
     if (currentTool === 'angled') {
       if (angledBaselines.length === 0 && isDrawingLine && lineStart) {
         // First baseline: drawing the line to set angle
@@ -193,8 +193,8 @@ export default function PixiCanvasTest() {
             tool: 'angled'
           }
         });
-      } else if (angledBaselines.length > 0 && !isDrawingLine) {
-        // Subsequent baselines: show preview at cursor with locked angle
+      } else if (angledBaselines.length > 0 && isDrawingLine && tempAngledBaselinePos) {
+        // Subsequent baselines: dragging with locked angle
         setTempAngledBaselinePos({ x: imageX, y: imageY });
 
         const lastBaseline = angledBaselines[angledBaselines.length - 1];
@@ -565,9 +565,10 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Handle baseline tool (click to add horizontal baseline)
+    // Handle baseline tool (click-drag-release)
     if (currentTool === 'baseline') {
-      addBaseline(imageY);
+      setIsDrawingLine(true);
+      setTempBaselineY(imageY);
       return;
     }
 
@@ -581,7 +582,8 @@ export default function PixiCanvasTest() {
         setAngledBaselineLineStart({ x: imageX, y: imageY });
         setAngledBaselineLineEnd({ x: imageX, y: imageY });
       } else {
-        // Subsequent baselines: store position, will add on mouseUp
+        // Subsequent baselines: start dragging with locked angle
+        setIsDrawingLine(true);
         setTempAngledBaselinePos({ x: imageX, y: imageY });
       }
       return;
@@ -801,6 +803,21 @@ export default function PixiCanvasTest() {
       return;
     }
 
+    // Handle baseline mouseup (confirm placement)
+    if (currentTool === 'baseline' && isDrawingLine && tempBaselineY !== null) {
+      addBaseline(tempBaselineY);
+      setIsDrawingLine(false);
+      setTempBaselineY(null);
+
+      // Clear overlay
+      const pixiRenderer = renderer.getRenderer();
+      if (pixiRenderer) {
+        pixiRenderer.setOverlayData({});
+      }
+
+      return;
+    }
+
     // Finish line drawing (first angled baseline or rotation)
     if (isDrawingLine && lineStart && lineEnd) {
       const dx = lineEnd.x - lineStart.x;
@@ -817,8 +834,14 @@ export default function PixiCanvasTest() {
           setAngledBaselineLineStart(null);
           setAngledBaselineLineEnd(null);
         } else if (currentTool === 'rotate') {
-          // Use confirmRotation which snaps to nearest horizontal or vertical
-          confirmRotation();
+          // Always rotate to make the line horizontal
+          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+          const currentRotation = imageRotation || 0;
+          // Negate angle to make line horizontal
+          const newRotation = currentRotation - angle;
+
+          // Update rotation in store
+          useAnnotatorStore.setState({ imageRotation: newRotation });
         }
       }
 
@@ -837,7 +860,7 @@ export default function PixiCanvasTest() {
     }
 
     // Handle subsequent angled baseline mouseup (template mode)
-    if (currentTool === 'angled' && angledBaselines.length > 0 && tempAngledBaselinePos) {
+    if (currentTool === 'angled' && angledBaselines.length > 0 && tempAngledBaselinePos && isDrawingLine) {
       const lastBaseline = angledBaselines[angledBaselines.length - 1];
 
       // Use the stored start/end from first baseline (already extended to edges)
@@ -845,7 +868,14 @@ export default function PixiCanvasTest() {
       addAngledBaseline(lastBaseline.start, lastBaseline.end, lastBaseline.angle);
 
       // Clear temp state
+      setIsDrawingLine(false);
       setTempAngledBaselinePos(null);
+
+      // Clear overlay
+      const pixiRenderer = renderer.getRenderer();
+      if (pixiRenderer) {
+        pixiRenderer.setOverlayData({});
+      }
 
       return;
     }
