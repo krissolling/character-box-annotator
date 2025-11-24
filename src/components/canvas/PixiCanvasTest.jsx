@@ -862,17 +862,73 @@ export default function PixiCanvasTest() {
     // Handle subsequent angled baseline mouseup (template mode)
     if (currentTool === 'angled' && angledBaselines.length > 0 && tempAngledBaselinePos && isDrawingLine) {
       const lastBaseline = angledBaselines[angledBaselines.length - 1];
+      const angleRad = lastBaseline.angle * (Math.PI / 180);
 
-      // Use the stored start/end from first baseline (already extended to edges)
-      // Just pass them through - addAngledBaseline will use same angle
-      addAngledBaseline(lastBaseline.start, lastBaseline.end, lastBaseline.angle);
+      // Calculate extended line at cursor position with locked angle
+      const pixiRenderer = renderer.getRenderer();
+      const width = pixiRenderer?.sourceImage?.width || 10000;
+      const height = pixiRenderer?.sourceImage?.height || 10000;
+
+      // Use the lineIntersection utility to extend to edges
+      const cos = Math.cos(angleRad);
+      const sin = Math.sin(angleRad);
+      const intersections = [];
+
+      // Left edge (x = 0)
+      if (cos !== 0) {
+        const t = -tempAngledBaselinePos.x / cos;
+        const y = tempAngledBaselinePos.y + t * sin;
+        if (y >= 0 && y <= height) intersections.push({ x: 0, y, t });
+      }
+
+      // Right edge (x = width)
+      if (cos !== 0) {
+        const t = (width - tempAngledBaselinePos.x) / cos;
+        const y = tempAngledBaselinePos.y + t * sin;
+        if (y >= 0 && y <= height) intersections.push({ x: width, y, t });
+      }
+
+      // Top edge (y = 0)
+      if (sin !== 0) {
+        const t = -tempAngledBaselinePos.y / sin;
+        const x = tempAngledBaselinePos.x + t * cos;
+        if (x >= 0 && x <= width) intersections.push({ x, y: 0, t });
+      }
+
+      // Bottom edge (y = height)
+      if (sin !== 0) {
+        const t = (height - tempAngledBaselinePos.y) / sin;
+        const x = tempAngledBaselinePos.x + t * cos;
+        if (x >= 0 && x <= width) intersections.push({ x, y: height, t });
+      }
+
+      // Sort by t and get extremes
+      intersections.sort((a, b) => a.t - b.t);
+
+      let start, end;
+      if (intersections.length >= 2) {
+        start = { x: intersections[0].x, y: intersections[0].y };
+        end = { x: intersections[intersections.length - 1].x, y: intersections[intersections.length - 1].y };
+      } else {
+        // Fallback
+        const extendLength = Math.max(width, height) * 2;
+        start = {
+          x: tempAngledBaselinePos.x - cos * extendLength,
+          y: tempAngledBaselinePos.y - sin * extendLength
+        };
+        end = {
+          x: tempAngledBaselinePos.x + cos * extendLength,
+          y: tempAngledBaselinePos.y + sin * extendLength
+        };
+      }
+
+      addAngledBaseline(start, end, lastBaseline.angle);
 
       // Clear temp state
       setIsDrawingLine(false);
       setTempAngledBaselinePos(null);
 
       // Clear overlay
-      const pixiRenderer = renderer.getRenderer();
       if (pixiRenderer) {
         pixiRenderer.setOverlayData({});
       }
