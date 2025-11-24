@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import useAnnotatorStore from './store/useAnnotatorStore';
 import SetupPanel from './components/setup/SetupPanel';
 import MainAnnotator from './components/MainAnnotator';
+import './styles/design-system.css';
 
 function App() {
   const isAnnotating = useAnnotatorStore((state) => state.isAnnotating);
@@ -36,8 +37,23 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [nextChar, previousChar, selectedBox, deleteBox, setSelectedBox]);
 
+  // Prevent browser zoom from trackpad pinch gestures and Cmd/Ctrl+scroll
+  useEffect(() => {
+    const handleWheel = (e) => {
+      // Trackpad pinch gestures send wheel events with ctrlKey set to true
+      // We want to prevent the browser from zooming the entire page
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+      }
+    };
+
+    // Must use { passive: false } to be able to call preventDefault()
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    return () => window.removeEventListener('wheel', handleWheel);
+  }, []);
+
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--te-bg)' }}>
       {!isAnnotating ? (
         <SetupPanel />
       ) : (

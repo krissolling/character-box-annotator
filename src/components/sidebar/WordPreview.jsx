@@ -1,16 +1,12 @@
 import { useRef, useEffect, useState } from 'react';
-import { Pipette, Package } from 'lucide-react';
-import JSZip from 'jszip';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
-import { Waifu2xUpscaler, resizeImage, getImageData, imageDataToCanvas } from '../../lib/upscaler';
 
-export default function WordPreview() {
+export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
   const canvasRef = useRef(null);
   const canvasContainerRef = useRef(null);
   const charPositionsRef = useRef([]); // Store character bounding boxes for click detection
   const kerningHandlesRef = useRef([]); // Store kerning handle positions
   const rotatedImageRef = useRef(null); // Cache rotated image
-  const [eyedropperActive, setEyedropperActive] = useState(false);
   const [debugClickAreas, setDebugClickAreas] = useState(false);
   const [lastClickPos, setLastClickPos] = useState(null);
   const [draggingKerningIndex, setDraggingKerningIndex] = useState(null);
@@ -20,16 +16,15 @@ export default function WordPreview() {
   const [hoveredCharPosition, setHoveredCharPosition] = useState(null);
   const [variantPickerOpen, setVariantPickerOpen] = useState(false);
   const [variantPickerData, setVariantPickerData] = useState(null); // { position, char, charIndex, currentVariant, availableVariants }
+  const [isHoveringPreview, setIsHoveringPreview] = useState(false);
   const isHoveringButtonRef = useRef(false);
   const hoverClearTimeoutRef = useRef(null);
-  const [isUpscaling, setIsUpscaling] = useState(false);
-  const [upscaleProgress, setUpscaleProgress] = useState(0);
-  const upscalerRef = useRef(null);
 
   const image = useAnnotatorStore((state) => state.image);
   const boxes = useAnnotatorStore((state) => state.boxes);
   const letterSpacing = useAnnotatorStore((state) => state.letterSpacing);
   const charPadding = useAnnotatorStore((state) => state.charPadding);
+  const placeholderOpacity = useAnnotatorStore((state) => state.placeholderOpacity);
   const kerningAdjustments = useAnnotatorStore((state) => state.kerningAdjustments);
   const text = useAnnotatorStore((state) => state.text);
   const baselines = useAnnotatorStore((state) => state.baselines);
@@ -41,165 +36,11 @@ export default function WordPreview() {
   const levelsAdjustment = useAnnotatorStore((state) => state.levelsAdjustment);
   const updateFilter = useAnnotatorStore((state) => state.updateFilter);
   const updateKerning = useAnnotatorStore((state) => state.updateKerning);
-  const imageFile = useAnnotatorStore((state) => state.imageFile);
   const selectedVariants = useAnnotatorStore((state) => state.selectedVariants);
   const textPositionVariants = useAnnotatorStore((state) => state.textPositionVariants);
   const setPositionVariant = useAnnotatorStore((state) => state.setPositionVariant);
   const clearPositionVariant = useAnnotatorStore((state) => state.clearPositionVariant);
   const uniqueChars = useAnnotatorStore((state) => state.uniqueChars);
-
-  const handleDownload = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // Convert canvas to blob and download as WebP
-    canvas.toBlob((blob) => {
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.download = `${text}_word_image.webp`;
-      link.href = url;
-      link.click();
-      URL.revokeObjectURL(url);
-    }, 'image/webp', 0.9);
-  };
-
-  const handleDownloadJSON = () => {
-    // Create JSON data with all relevant state INCLUDING eraseMask
-    const jsonData = {
-      text,
-      boxes: boxes.map((box, index) => ({
-        char: box.char,
-        x: box.x,
-        y: box.y,
-        width: box.width,
-        height: box.height,
-        brushMask: box.brushMask,
-        eraseMask: editedCharData[index]?.eraseMask || null // Include erase mask data
-      })),
-      letterSpacing,
-      charPadding,
-      kerningAdjustments,
-      baselines,
-      angledBaselines,
-      imageRotation,
-      imageFilters,
-      levelsAdjustment
-    };
-
-    // Convert to JSON string and download
-    const jsonString = JSON.stringify(jsonData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.download = `${text}_annotations.json`;
-    link.href = url;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleDownloadZip = async () => {
-    if (!image || !imageFile) {
-      alert('No image loaded to include in ZIP');
-      return;
-    }
-
-    const zip = new JSZip();
-
-    // Add the original image
-    zip.file(imageFile.name, imageFile);
-
-    // Create JSON data with all relevant state INCLUDING eraseMask
-    const jsonData = {
-      text,
-      imageName: imageFile.name, // Store image filename for reference
-      boxes: boxes.map((box, index) => ({
-        char: box.char,
-        x: box.x,
-        y: box.y,
-        width: box.width,
-        height: box.height,
-        brushMask: box.brushMask,
-        eraseMask: editedCharData[index]?.eraseMask || null
-      })),
-      letterSpacing,
-      charPadding,
-      kerningAdjustments,
-      baselines,
-      angledBaselines,
-      imageRotation,
-      imageFilters,
-      levelsAdjustment
-    };
-
-    // Add JSON to zip
-    const jsonString = JSON.stringify(jsonData, null, 2);
-    zip.file('annotations.json', jsonString);
-
-    // Generate zip and download
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(zipBlob);
-    const link = document.createElement('a');
-    link.download = `${text || 'annotation'}_project.zip`;
-    link.href = url;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleDownloadUpscaled = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    setIsUpscaling(true);
-    setUpscaleProgress(0);
-
-    try {
-      // Initialize upscaler if not already done
-      if (!upscalerRef.current) {
-        upscalerRef.current = new Waifu2xUpscaler();
-        await upscalerRef.current.initialize();
-      }
-
-      // Convert canvas to image for resizing
-      const img = new Image();
-      const canvasDataUrl = canvas.toDataURL('image/png');
-
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = canvasDataUrl;
-      });
-
-      // Resize to max 768px before upscaling
-      const { canvas: resizedCanvas } = resizeImage(img, 768);
-      const inputData = getImageData(resizedCanvas);
-
-      // Upscale (4x) - output will be ~3072px max
-      const outputData = await upscalerRef.current.upscale(inputData, (progress) => {
-        setUpscaleProgress(progress);
-      });
-
-      // Convert to displayable image and download as WebP
-      const resultCanvas = imageDataToCanvas(outputData);
-      resultCanvas.toBlob((blob) => {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = `${text}_word_image_4x.webp`;
-        link.href = url;
-        link.click();
-        URL.revokeObjectURL(url);
-      }, 'image/webp', 0.9);
-    } catch (error) {
-      console.error('Upscaling failed:', error);
-      alert('Upscaling failed: ' + error.message);
-    } finally {
-      setIsUpscaling(false);
-      setUpscaleProgress(0);
-    }
-  };
-
-  const handleWhitePoint = () => {
-    setEyedropperActive(!eyedropperActive);
-  };
 
   // Render a character box thumbnail to canvas (similar to CharacterPicker)
   const renderCharacterThumbnail = (canvasElement, box) => {
@@ -597,20 +438,14 @@ export default function WordPreview() {
   }, [eyedropperActive]);
 
   const panelStyle = {
-    background: 'white',
-    border: '2px solid #ddd',
-    borderRadius: '8px',
+    background: 'var(--te-white)',
+    border: '1px solid var(--te-gray-mid)',
+    borderRadius: 'var(--radius-sm)',
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden'
-  };
-
-  const titleStyle = {
-    fontWeight: 600,
-    marginBottom: '10px',
-    color: '#333',
-    fontSize: '14px'
+    overflow: 'hidden',
+    boxShadow: 'var(--shadow-inner)'
   };
 
   useEffect(() => {
@@ -765,8 +600,9 @@ export default function WordPreview() {
     });
 
     // Calculate average dimensions for placeholders
-    const avgBoxWidth = boxCount > 0 ? Math.round(totalBoxWidth / boxCount) : 40;
-    const avgBoxHeight = boxCount > 0 ? Math.round(totalBoxHeight / boxCount) : 60;
+    // Use larger defaults for better initial DPI when no boxes exist yet
+    const avgBoxWidth = boxCount > 0 ? Math.round(totalBoxWidth / boxCount) : 160;
+    const avgBoxHeight = boxCount > 0 ? Math.round(totalBoxHeight / boxCount) : 240;
 
     // SECOND PASS: Calculate total width and max height using correct dimensions
     let totalWidth = 0;
@@ -844,8 +680,9 @@ export default function WordPreview() {
 
     ctx.scale(dpr, dpr);
 
-    // Fill background (dark when inverted, white otherwise)
-    ctx.fillStyle = imageFilters.invert ? '#000000' : '#ffffff';
+    // Fill background - always white
+    // When inverting white-on-black source, characters become black-on-white, so white background is correct
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, totalWidth, canvasHeight);
 
     // Draw baseline for visualization (only in debug mode)
@@ -937,18 +774,18 @@ export default function WordPreview() {
           // PLACEHOLDER RENDERING for characters without boxes
           ctx.save();
 
-          // Draw placeholder box with dotted border
-          ctx.strokeStyle = '#999';
-          ctx.fillStyle = '#f5f5f5';
-          ctx.lineWidth = 2;
-          ctx.setLineDash([5, 5]);
-          ctx.fillRect(currentX, yPos, boxWidth, boxHeight);
+          // Draw placeholder box with thin dotted border (no fill)
+          ctx.strokeStyle = '#ccc';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
           ctx.strokeRect(currentX, yPos, boxWidth, boxHeight);
           ctx.setLineDash([]);
 
-          // Draw the character text in center
-          ctx.fillStyle = '#999';
-          ctx.font = `${Math.round(boxHeight * 0.5)}px Arial`;
+          // Draw the character text in center using Antarctica font
+          // Use placeholderOpacity from store (1.0 for preview, 0.1 for export)
+          ctx.fillStyle = `rgba(128, 128, 128, ${placeholderOpacity})`;
+          const fontSize = Math.round(boxHeight * 0.35);
+          ctx.font = `350 ${fontSize}px Antarctica, sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(char, currentX + boxWidth / 2, yPos + boxHeight / 2);
@@ -1131,16 +968,11 @@ export default function WordPreview() {
           });
 
           // Store kerning handle position (for all except first character)
-          // Handle should be at the left edge of current character (before it's drawn)
+          // Handle should be at the left edge of current character content (after padding)
           if (index > 0) {
-            // Calculate handle position at the gap between previous and current character
-            // This is where we are now, before drawing the current character
-            const prevCharRightEdge = currentX - letterSpacing - (kerningAdjustments[index - 1] || 0);
-            const handleX = prevCharRightEdge + (letterSpacing / 2) + ((kerningAdjustments[index - 1] || 0) / 2);
-
             kerningHandlesRef.current.push({
               index: index - 1, // Kerning adjustment index (between prev and current char)
-              x: handleX,
+              x: currentX + charPadding, // Left edge of actual character content
               y: yPos + boxHeight + 5, // Position below the character
               canvasHeight: canvasHeight
             });
@@ -1267,7 +1099,7 @@ export default function WordPreview() {
     return (
       <div style={panelStyle}>
         <div style={{ padding: '12px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-          <p style={{ fontSize: '13px', color: '#999', fontStyle: 'italic' }}>
+          <p className="te-small-caps" style={{ color: 'var(--te-gray-dark)', fontStyle: 'italic' }}>
             {!image ? 'Upload an image to get started' : 'Enter text to preview'}
           </p>
         </div>
@@ -1276,118 +1108,14 @@ export default function WordPreview() {
   }
 
   return (
-    <div style={panelStyle}>
-      <div style={{ padding: '12px', borderBottom: '2px solid #ddd', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-        <h3 style={titleStyle}>Word Preview</h3>
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <button
-            onClick={() => setDebugClickAreas(!debugClickAreas)}
-            title="Toggle click area debug visualization"
-            style={{
-              padding: '6px 10px',
-              fontSize: '11px',
-              background: debugClickAreas ? '#f97316' : '#f0f0f0',
-              color: debugClickAreas ? 'white' : '#333',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 600
-            }}
-          >
-            Debug
-          </button>
-          <button
-            onClick={handleWhitePoint}
-            title="Set White Point - Click on a pixel that should be white (Esc to cancel)"
-            style={{
-              padding: '6px 10px',
-              fontSize: '11px',
-              background: eyedropperActive ? '#2196F3' : '#f0f0f0',
-              color: eyedropperActive ? 'white' : '#333',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-          >
-            <Pipette style={{ width: '14px', height: '14px' }} />
-          </button>
-          <button
-            onClick={handleDownload}
-            style={{
-              padding: '6px 12px',
-              fontSize: '11px',
-              background: '#4CAF50',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 600
-            }}
-          >
-            Download WebP
-          </button>
-          <button
-            onClick={handleDownloadUpscaled}
-            disabled={isUpscaling}
-            title="Download 4x upscaled WebP using Waifu2x"
-            style={{
-              padding: '6px 12px',
-              fontSize: '11px',
-              background: isUpscaling ? '#666' : '#FF9800',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: isUpscaling ? 'not-allowed' : 'pointer',
-              fontWeight: 600,
-              minWidth: '100px'
-            }}
-          >
-            {isUpscaling ? `${Math.round(upscaleProgress)}%` : 'Download 4x'}
-          </button>
-          <button
-            onClick={handleDownloadJSON}
-            style={{
-              padding: '6px 12px',
-              fontSize: '11px',
-              background: '#2196F3',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 600
-            }}
-          >
-            Download JSON
-          </button>
-          <button
-            onClick={handleDownloadZip}
-            title="Download ZIP with image and complete annotations"
-            style={{
-              padding: '6px 12px',
-              fontSize: '11px',
-              background: '#9C27B0',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-          >
-            <Package style={{ width: '14px', height: '14px' }} />
-            ZIP
-          </button>
-        </div>
-      </div>
+    <div style={{ ...panelStyle, position: 'relative' }}>
       <div
         ref={canvasContainerRef}
-        onMouseLeave={() => setHoveredCharPosition(null)}
+        onMouseEnter={() => setIsHoveringPreview(true)}
+        onMouseLeave={() => {
+          setHoveredCharPosition(null);
+          setIsHoveringPreview(false);
+        }}
         style={{
           padding: '12px',
           flex: 1,
@@ -1414,8 +1142,8 @@ export default function WordPreview() {
             objectFit: 'contain'
           }}
         />
-        {/* Kerning adjustment handles */}
-        {kerningHandlesRef.current.map((handle, i) => {
+        {/* Kerning adjustment handles - only show on hover */}
+        {isHoveringPreview && kerningHandlesRef.current.map((handle, i) => {
           const canvas = canvasRef.current;
           if (!canvas) return null;
 
@@ -1457,21 +1185,28 @@ export default function WordPreview() {
               style={{
                 position: 'absolute',
                 left: `${displayX}px`,
-                top: `${displayY}px`,
-                width: '12px',
-                height: '20px',
-                background: isDragging ? '#2196F3' : '#FF9800',
-                border: '2px solid white',
-                borderRadius: '3px',
+                bottom: '-2px',
+                width: '24px',
+                height: 'calc(100% - 16px)',
                 cursor: 'ew-resize',
-                transform: 'translateX(-50%)',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                transition: isDragging ? 'none' : 'background 0.2s',
                 zIndex: 10,
                 pointerEvents: 'auto'
               }}
               title={`Adjust kerning (current: ${kerningAdjustments[handle.index] || 0}px)`}
-            />
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '6px',
+                  bottom: '12px',
+                  width: '12px',
+                  borderRadius: '2px',
+                  height: '20px',
+                  background: `${isDragging ? '#2196F3' : '#FF9800'}`,
+                  transition: isDragging ? 'none' : 'border-color 0.2s'
+                }}
+              />
+            </div>
           );
         })}
 

@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Character Box Annotator is a React application for annotating character bounding boxes on images. Users upload an image, enter text to annotate, then draw boxes around each character. The app supports advanced features like brush masking, image rotation, baseline alignment, OCR auto-solve, and typography controls.
 
+When pushed we automatically build the project to charboxer.zeabur.app
+
 ## Common Commands
 
 ### Development

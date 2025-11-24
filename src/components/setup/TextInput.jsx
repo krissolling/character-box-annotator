@@ -24,24 +24,21 @@ export default function TextInput() {
   };
 
   return (
-    <div style={{ marginBottom: '15px' }}>
-      <label style={{
+    <div style={{ marginBottom: '12px' }}>
+      <label className="te-small-caps" style={{
         display: 'block',
-        fontSize: '14px',
-        color: '#333',
-        marginBottom: '5px',
-        fontWeight: 500
+        color: 'var(--te-gray-dark)',
+        marginBottom: '6px'
       }}>
         Text to Annotate
       </label>
       {isFromStorage && (
-        <p style={{
+        <p className="te-small-caps" style={{
           marginBottom: '8px',
-          fontSize: '12px',
-          color: '#4CAF50',
+          color: 'var(--te-green)',
           fontStyle: 'italic'
         }}>
-          ✓ Loaded from previous session
+          Loaded from previous session
         </p>
       )}
       <input
@@ -51,21 +48,18 @@ export default function TextInput() {
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
         placeholder="Enter text to annotate..."
+        className="te-input"
         style={{
           width: '100%',
-          padding: '12px',
-          fontSize: '16px',
-          border: `2px solid ${isFocused ? '#4CAF50' : '#ddd'}`,
-          borderRadius: '8px',
-          transition: 'border-color 0.2s',
-          outline: 'none'
+          height: '40px',
+          fontSize: '14px',
+          borderColor: isFocused ? 'var(--te-blue)' : 'var(--te-gray-mid)'
         }}
       />
       {text && (
-        <p style={{
+        <p className="te-small-caps" style={{
           marginTop: '8px',
-          fontSize: '13px',
-          color: '#666'
+          color: 'var(--te-gray-dark)'
         }}>
           {text.length} characters, {new Set(text.split('')).size} unique
         </p>

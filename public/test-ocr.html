@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OCR Test</title>
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        #log { background: #f5f5f5; padding: 10px; white-space: pre-wrap; max-height: 500px; overflow-y: auto; }
+        button { padding: 10px 20px; font-size: 16px; margin: 10px 0; }
+        canvas { border: 1px solid #ccc; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>OCR Test</h1>
+    <p>This tests if Tesseract.js returns symbol-level data in the browser.</p>
+
+    <canvas id="testCanvas" width="600" height="150"></canvas>
+    <br>
+    <button onclick="runTest()">Run OCR Test</button>
+
+    <h3>Log:</h3>
+    <div id="log"></div>
+
+    <script>
+        const log = (msg) => {
+            document.getElementById('log').textContent += msg + '\n';
+            console.log(msg);
+        };
+
+        // Draw test image
+        const canvas = document.getElementById('testCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'black';
+        ctx.font = '72px Arial';
+        ctx.fillText('Hello', 50, 100);
+
+        async function runTest() {
+            document.getElementById('log').textContent = '';
+            log('🧪 Testing OCR implementation in browser...\n');
+
+            const text = 'Hello';
+            const uniqueChars = [...new Set(text.split(''))];
+            log(`🎯 Target text: "${text}"`);
+            log(`🔤 Unique chars: ${uniqueChars.join(', ')}\n`);
+
+            log('📦 Creating Tesseract worker...');
+            const worker = await Tesseract.createWorker('eng', 1, {
+                logger: m => {
+                    if (m.status === 'recognizing text') {
+                        log(`   Progress: ${Math.round(m.progress * 100)}%`);
+                    }
+                }
+            });
+
+            const imageData = canvas.toDataURL('image/png');
+
+            log('\n🔍 Running OCR...');
+            const result = await worker.recognize(imageData);
+
+            log(`📋 Result text: "${result.data.text}"`);
+            log(`📋 Result confidence: ${result.data.confidence}`);
+            log(`📋 Result keys: ${Object.keys(result.data).join(', ')}`);
+
+            // Check symbols
+            const symbols = result.data.symbols || [];
+            log(`\n✅ Found ${symbols.length} symbols`);
+
+            if (symbols.length > 0) {
+                log('\n📝 Detected symbols:');
+                symbols.forEach((s, i) => {
+                    log(`   ${i + 1}. '${s.text}' - conf: ${s.confidence.toFixed(1)}% - bbox: (${s.bbox.x0}, ${s.bbox.y0}) to (${s.bbox.x1}, ${s.bbox.y1})`);
+                });
+
+                // Match to target
+                log('\n🎯 Matching to target characters:');
+                const MIN_CONFIDENCE = 60;
+                const validSymbols = symbols.filter(s =>
+                    s.text && s.text.trim().length > 0 && s.confidence >= MIN_CONFIDENCE
+                );
+
+                for (const targetChar of uniqueChars) {
+                    const candidates = validSymbols.filter(s =>
+                        s.text.toLowerCase() === targetChar.toLowerCase()
+                    );
+                    if (candidates.length > 0) {
+                        const best = candidates.reduce((a, b) => a.confidence > b.confidence ? a : b);
+                        log(`   ✓ '${targetChar}' matched with confidence ${best.confidence.toFixed(1)}%`);
+                    } else {
+                        log(`   ✗ '${targetChar}' not found`);
+                    }
+                }
+            } else {
+                log('\n⚠️ No symbols found!');
+                log('Checking nested structure...');
+                log(`   blocks: ${result.data.blocks?.length || typeof result.data.blocks}`);
+                log(`   words: ${result.data.words?.length || 0}`);
+
+                // Try to extract from blocks if they exist
+                if (result.data.blocks && Array.isArray(result.data.blocks)) {
+                    result.data.blocks.forEach((block, bi) => {
+                        log(`   Block ${bi}: ${block.paragraphs?.length || 0} paragraphs`);
+                        if (block.paragraphs) {
+                            block.paragraphs.forEach(para => {
+                                para.lines?.forEach(line => {
+                                    line.words?.forEach(word => {
+                                        log(`      Word: "${word.text}" - ${word.symbols?.length || 0} symbols`);
+                                        word.symbols?.forEach(s => {
+                                            log(`         '${s.text}' conf: ${s.confidence}`);
+                                        });
+                                    });
+                                });
+                            });
+                        }
+                    });
+                }
+            }
+
+            await worker.terminate();
+            log('\n🧹 Worker terminated');
+            log('\n✅ Test complete!');
+        }
+    </script>
+</body>
+</html>

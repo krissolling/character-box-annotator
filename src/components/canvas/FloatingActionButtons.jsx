@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, X } from 'lucide-react';
-import { createWorker } from 'tesseract.js';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
+import { processAutoSolveRegions } from '../../utils/autoSolve';
 
 export default function FloatingActionButtons() {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -14,9 +14,14 @@ export default function FloatingActionButtons() {
   const confirmBrushBox = useAnnotatorStore((state) => state.confirmBrushBox);
   const cancelBrushBox = useAnnotatorStore((state) => state.cancelBrushBox);
   const cancelAutoSolve = useAnnotatorStore((state) => state.cancelAutoSolve);
+  const clearAutoSolveRegions = useAnnotatorStore((state) => state.clearAutoSolveRegions);
   const image = useAnnotatorStore((state) => state.image);
-  const setText = useAnnotatorStore((state) => state.setText);
-  const setCurrentTool = useAnnotatorStore((state) => state.setCurrentTool);
+  const imageRotation = useAnnotatorStore((state) => state.imageRotation);
+  const boxes = useAnnotatorStore((state) => state.boxes);
+  const uniqueChars = useAnnotatorStore((state) => state.uniqueChars);
+  const text = useAnnotatorStore((state) => state.text);
+  const addBox = useAnnotatorStore((state) => state.addBox);
+  const setCurrentCharIndex = useAnnotatorStore((state) => state.setCurrentCharIndex);
 
   // Only show if in brush mode with strokes OR auto-solve mode with regions
   const showBrushActions = isBrushBoxMode && brushStrokes.length > 0;
@@ -31,7 +36,7 @@ export default function FloatingActionButtons() {
       // Confirm brush box - convert strokes to bounding box
       confirmBrushBox();
     } else if (isSelectingAutoSolveRegion) {
-      // Confirm auto-solve regions - run Tesseract
+      // Confirm auto-solve regions - run OCR and create boxes
       if (autoSolveRegions.length === 0) {
         alert('Please draw at least one region first');
         return;
@@ -42,60 +47,48 @@ export default function FloatingActionButtons() {
         return;
       }
 
+      if (uniqueChars.length === 0) {
+        alert('Please enter a string first before using auto-solve');
+        return;
+      }
+
       setIsProcessing(true);
-      setOcrProgress('Initializing OCR...');
+      setOcrProgress('Processing OCR...');
 
       try {
-        // Create a Tesseract worker
-        const worker = await createWorker('eng', 1, {
-          logger: (m) => {
-            if (m.status === 'recognizing text') {
-              setOcrProgress(`Processing: ${Math.round(m.progress * 100)}%`);
-            }
-          },
-        });
-
-        // Create a canvas to extract the region from the image
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-
-        // Process first region (for now, just process one region)
-        const region = autoSolveRegions[0];
-        canvas.width = region.width;
-        canvas.height = region.height;
-
-        // Draw the selected region
-        ctx.drawImage(
+        const { addedBoxes, skippedCount } = await processAutoSolveRegions(
           image,
-          region.x, region.y, region.width, region.height,
-          0, 0, region.width, region.height
+          autoSolveRegions,
+          boxes,
+          uniqueChars,
+          text,
+          imageRotation
         );
 
-        setOcrProgress('Recognizing text...');
+        // Add all new boxes to the store
+        addedBoxes.forEach((box) => addBox(box));
 
-        // Run OCR on the canvas
-        const { data: { text } } = await worker.recognize(canvas);
+        // Find next unannotated character
+        const findNextUnannotatedChar = () => {
+          for (let i = 0; i < uniqueChars.length; i++) {
+            const char = uniqueChars[i];
+            const hasBox = boxes.some((b) => b.char === char) || addedBoxes.some((b) => b.char === char);
+            if (!hasBox) return i;
+          }
+          return 0;
+        };
 
-        // Clean up the text (remove extra whitespace, newlines)
-        const cleanedText = text.trim().replace(/\s+/g, '');
+        setCurrentCharIndex(findNextUnannotatedChar());
 
-        if (cleanedText.length === 0) {
-          alert('No text detected in the selected region. Try selecting a clearer area.');
-        } else {
-          // Set the recognized text
-          setText(cleanedText);
-          // Auto-switch to box tool after OCR
-          setCurrentTool('box');
-          alert(`OCR detected: "${cleanedText}"\n\nYou can now start annotating!`);
-        }
+        // Clear regions and exit auto-solve mode
+        clearAutoSolveRegions();
 
-        // Cleanup
-        await worker.terminate();
-        cancelAutoSolve();
-
+        // Log results to console
+        const totalChars = uniqueChars.length;
+        const remaining = totalChars - (addedBoxes.length + skippedCount);
+        console.log(`✅ Auto-Solve Complete: Added ${addedBoxes.length}, Skipped ${skippedCount}, Remaining ${remaining}`);
       } catch (error) {
-        console.error('OCR Error:', error);
-        alert('OCR failed. Please try again.');
+        console.error('❌ Auto-solve error:', error);
       } finally {
         setIsProcessing(false);
         setOcrProgress('');

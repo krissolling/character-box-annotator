@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pipette, Sun, Wand2, RotateCcw } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
+import SplineSlider from '../ui/SplineSlider';
 
-export default function FilterControls() {
+export default function FilterControls({ eyedropperActive, setEyedropperActive }) {
   const [slidersExpanded, setSlidersExpanded] = useState(false);
   const imageFilters = useAnnotatorStore((state) => state.imageFilters);
   const updateFilter = useAnnotatorStore((state) => state.updateFilter);
@@ -150,58 +151,14 @@ export default function FilterControls() {
     updateFilter('highlights', finalHighlights);
   };
 
-  const panelStyle = {
-    background: 'white',
-    padding: '10px',
-    borderRadius: '12px',
-    border: '2px solid #ddd',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  };
-
-  const titleStyle = {
-    fontWeight: 600,
-    marginBottom: '8px',
-    color: '#333',
-    fontSize: '13px'
-  };
-
-  const controlRowStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    marginBottom: '10px',
-    gap: '6px'
-  };
-
-  const labelStyle = {
-    fontSize: '10px',
-    color: '#666',
-    width: '50px',
-    flex: '0 0 50px',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap'
-  };
-
-  const valueStyle = {
-    fontSize: '12px',
-    color: '#333',
-    minWidth: '40px',
-    textAlign: 'right',
-    fontWeight: 500
-  };
-
-  const sliderStyle = {
-    flex: 1,
-    height: '6px',
-    accentColor: '#4CAF50'
-  };
-
   return (
-    <div style={panelStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-        <h3 style={{ fontSize: '13px', fontWeight: 600, color: '#333', margin: 0 }}>
-          Visual Controls
-        </h3>
+    <div className="te-panel">
+      {/* Header with icon */}
+      <div className="te-panel-header">
+        <span className="te-panel-header-icon">
+          <Sun size={14} />
+        </span>
+        <span className="te-panel-header-title">Visual</span>
         <button
           onClick={() => setSlidersExpanded(!slidersExpanded)}
           style={{
@@ -211,146 +168,151 @@ export default function FilterControls() {
             padding: '4px',
             display: 'flex',
             alignItems: 'center',
-            color: '#666'
+            color: 'var(--te-gray-dark)',
+            opacity: 0.6
           }}
           title={slidersExpanded ? 'Collapse sliders' : 'Expand sliders'}
         >
-          {slidersExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          {slidersExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       </div>
 
-      {/* Invert - Always visible */}
-      <div style={controlRowStyle}>
-        <label style={labelStyle}>Invert</label>
-        <div style={{ flex: 1 }}></div>
-        <input
-          type="checkbox"
-          checked={imageFilters.invert}
-          onChange={(e) => updateFilter('invert', e.target.checked)}
-          style={{ cursor: 'pointer' }}
-        />
+      {/* Invert - Yes/No toggle buttons */}
+      <div className="te-control-row">
+        <span className="te-control-label">Invert</span>
+        <div className="te-toggle-group">
+          <button
+            className={`te-toggle-option ${imageFilters.invert ? 'te-toggle-option-active' : 'te-toggle-option-inactive'}`}
+            onClick={() => updateFilter('invert', true)}
+          >
+            <span>Yes</span>
+          </button>
+          <button
+            className={`te-toggle-option ${!imageFilters.invert ? 'te-toggle-option-active' : 'te-toggle-option-inactive'}`}
+            onClick={() => updateFilter('invert', false)}
+          >
+            <span>No</span>
+          </button>
+        </div>
       </div>
 
       {/* Collapsible Sliders */}
       {slidersExpanded && (
-        <>
+        <div style={{ marginTop: '8px' }}>
           {/* Brightness */}
-          <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
-            <label style={labelStyle}>Brightness</label>
-            <input
-              type="range"
-              min="0"
-              max="200"
+          <div className="te-control-row">
+            <span className="te-control-label">Bright</span>
+            <SplineSlider
               value={imageFilters.brightness}
-              onChange={(e) => updateFilter('brightness', parseInt(e.target.value))}
-              style={sliderStyle}
+              onChange={(val) => updateFilter('brightness', val)}
+              min={0}
+              max={200}
+              showInput={true}
             />
           </div>
 
           {/* Contrast */}
-          <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
-            <label style={labelStyle}>Contrast</label>
-            <input
-              type="range"
-              min="0"
-              max="200"
+          <div className="te-control-row">
+            <span className="te-control-label">Contrast</span>
+            <SplineSlider
               value={imageFilters.contrast}
-              onChange={(e) => updateFilter('contrast', parseInt(e.target.value))}
-              style={sliderStyle}
+              onChange={(val) => updateFilter('contrast', val)}
+              min={0}
+              max={200}
+              showInput={true}
             />
           </div>
 
           {/* Grayscale */}
-          <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
-            <label style={labelStyle}>Grayscale</label>
-            <input
-              type="range"
-              min="0"
-              max="100"
+          <div className="te-control-row">
+            <span className="te-control-label">Gray</span>
+            <SplineSlider
               value={imageFilters.grayscale}
-              onChange={(e) => updateFilter('grayscale', parseInt(e.target.value))}
-              style={sliderStyle}
+              onChange={(val) => updateFilter('grayscale', val)}
+              min={0}
+              max={100}
+              showInput={true}
             />
           </div>
 
           {/* Shadows */}
-          <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
-            <label style={labelStyle}>Shadows</label>
-            <input
-              type="range"
-              min="-100"
-              max="100"
+          <div className="te-control-row">
+            <span className="te-control-label">Shadows</span>
+            <SplineSlider
               value={imageFilters.shadows}
-              onChange={(e) => updateFilter('shadows', parseInt(e.target.value))}
-              style={sliderStyle}
+              onChange={(val) => updateFilter('shadows', val)}
+              min={-100}
+              max={100}
+              showInput={true}
             />
           </div>
 
           {/* Highlights */}
-          <div style={{ ...controlRowStyle, marginBottom: '12px' }}>
-            <label style={labelStyle}>Highlights</label>
-            <input
-              type="range"
-              min="-100"
-              max="100"
+          <div className="te-control-row">
+            <span className="te-control-label">Hilights</span>
+            <SplineSlider
               value={imageFilters.highlights}
-              onChange={(e) => updateFilter('highlights', parseInt(e.target.value))}
-              style={sliderStyle}
+              onChange={(val) => updateFilter('highlights', val)}
+              min={-100}
+              max={100}
+              showInput={true}
             />
           </div>
-        </>
+
+        </div>
       )}
 
-      {/* Auto and Reset buttons - Always visible */}
-      <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
-        <button
-          onClick={handleAutoAdjust}
-          disabled={!image || boxes.length === 0}
-          style={{
-            flex: 1,
-            padding: '8px',
-            background: (image && boxes.length > 0) ? '#4CAF50' : '#ccc',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '11px',
-            fontWeight: 600,
-            cursor: (image && boxes.length > 0) ? 'pointer' : 'not-allowed',
-            transition: 'background 0.2s'
-          }}
-          onMouseOver={(e) => {
-            if (image && boxes.length > 0) e.target.style.background = '#45a049';
-          }}
-          onMouseOut={(e) => {
-            if (image && boxes.length > 0) e.target.style.background = '#4CAF50';
-          }}
-        >
-          Auto
-        </button>
-        <button
-          onClick={resetFilters}
-          disabled={!hasChanges}
-          style={{
-            flex: 1,
-            padding: '8px',
-            background: hasChanges ? '#f5f5f5' : '#e0e0e0',
-            color: hasChanges ? '#333' : '#999',
-            border: '1px solid #ddd',
-            borderRadius: '6px',
-            fontSize: '11px',
-            fontWeight: 600,
-            cursor: hasChanges ? 'pointer' : 'not-allowed',
-            transition: 'background 0.2s'
-          }}
-          onMouseOver={(e) => {
-            if (hasChanges) e.target.style.background = '#e0e0e0';
-          }}
-          onMouseOut={(e) => {
-            if (hasChanges) e.target.style.background = '#f5f5f5';
-          }}
-        >
-          Reset
-        </button>
+      {/* Action buttons - Always visible */}
+      <div className="te-control-row" style={{ marginTop: '8px' }}>
+        <span className="te-control-label">Actions</span>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {/* White Point Eyedropper */}
+          <button
+            onClick={() => setEyedropperActive && setEyedropperActive(!eyedropperActive)}
+            disabled={!image || boxes.length === 0}
+            className={`te-btn te-btn-icon ${eyedropperActive ? 'active' : 'te-btn-secondary'}`}
+            style={{
+              flex: 1,
+              background: eyedropperActive ? 'var(--te-orange)' : (image && boxes.length > 0) ? undefined : 'var(--te-gray-mid)',
+              borderColor: eyedropperActive ? 'var(--te-orange)' : (image && boxes.length > 0) ? undefined : 'var(--te-gray-mid)',
+              color: eyedropperActive ? 'var(--te-white)' : (image && boxes.length > 0) ? undefined : 'var(--te-gray-dark)',
+              cursor: (image && boxes.length > 0) ? 'pointer' : 'not-allowed'
+            }}
+            title="Set white point by clicking on word preview"
+          >
+            <Pipette style={{ width: '14px', height: '14px' }} />
+          </button>
+          {/* Auto */}
+          <button
+            onClick={handleAutoAdjust}
+            disabled={!image || boxes.length === 0}
+            className="te-btn te-btn-icon"
+            style={{
+              flex: 1,
+              background: (image && boxes.length > 0) ? 'var(--te-green)' : 'var(--te-gray-mid)',
+              color: (image && boxes.length > 0) ? 'var(--te-black)' : 'var(--te-gray-dark)',
+              borderColor: (image && boxes.length > 0) ? 'var(--te-green)' : 'var(--te-gray-mid)',
+              cursor: (image && boxes.length > 0) ? 'pointer' : 'not-allowed'
+            }}
+            title="Auto adjust levels"
+          >
+            <Wand2 style={{ width: '14px', height: '14px' }} />
+          </button>
+          {/* Reset */}
+          <button
+            onClick={resetFilters}
+            disabled={!hasChanges}
+            className="te-btn te-btn-icon te-btn-secondary"
+            style={{
+              flex: 1,
+              opacity: hasChanges ? 1 : 0.5,
+              cursor: hasChanges ? 'pointer' : 'not-allowed'
+            }}
+            title="Reset filters"
+          >
+            <RotateCcw style={{ width: '14px', height: '14px' }} />
+          </button>
+        </div>
       </div>
 
     </div>

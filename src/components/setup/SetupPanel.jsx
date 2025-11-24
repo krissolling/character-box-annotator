@@ -88,50 +88,32 @@ export default function SetupPanel() {
         right: '16px',
         zIndex: 50,
         display: 'flex',
-        gap: '12px'
+        gap: '8px'
       }}>
         <button
           onClick={handleEditString}
+          className="te-btn"
           style={{
-            padding: '12px 24px',
-            background: '#2196F3',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '14px',
-            fontWeight: 500,
-            cursor: 'pointer',
-            transition: 'background 0.2s',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
+            background: 'var(--te-blue)',
+            borderColor: 'var(--te-blue)',
+            color: 'var(--te-white)',
+            gap: '6px'
           }}
-          onMouseOver={(e) => e.target.style.background = '#1976D2'}
-          onMouseOut={(e) => e.target.style.background = '#2196F3'}
         >
-          <Edit3 style={{ width: '16px', height: '16px' }} />
+          <Edit3 style={{ width: '14px', height: '14px' }} />
           Edit String
         </button>
         <button
           onClick={handleReset}
+          className="te-btn"
           style={{
-            padding: '12px 24px',
-            background: '#FF9800',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '14px',
-            fontWeight: 500,
-            cursor: 'pointer',
-            transition: 'background 0.2s',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
+            background: 'var(--te-orange)',
+            borderColor: 'var(--te-orange)',
+            color: 'var(--te-white)',
+            gap: '6px'
           }}
-          onMouseOver={(e) => e.target.style.background = '#F57C00'}
-          onMouseOut={(e) => e.target.style.background = '#FF9800'}
         >
-          <RotateCcw style={{ width: '16px', height: '16px' }} />
+          <RotateCcw style={{ width: '14px', height: '14px' }} />
           New Image
         </button>
       </div>
@@ -142,19 +124,16 @@ export default function SetupPanel() {
     <div style={{
       maxWidth: '100%',
       margin: '0 auto',
-      padding: '15px',
+      padding: 'var(--padding-md)',
       height: '100vh',
       display: 'flex',
       flexDirection: 'column',
       boxSizing: 'border-box'
     }}>
       {/* Header */}
-      <header style={{
-        background: 'white',
-        padding: '15px 20px',
-        borderRadius: '12px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        marginBottom: '15px',
+      <header className="te-panel" style={{
+        padding: 'var(--padding-md)',
+        marginBottom: 'var(--padding-md)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -162,15 +141,15 @@ export default function SetupPanel() {
       }}>
         <div>
           <h1 style={{
-            color: '#333',
-            fontSize: '20px',
-            marginBottom: '5px'
+            color: 'var(--te-black)',
+            fontSize: '16px',
+            fontVariationSettings: "'wght' 500",
+            marginBottom: '4px'
           }}>
             Character Box Annotator
           </h1>
-          <div style={{
-            color: '#666',
-            fontSize: '14px'
+          <div className="te-small-caps" style={{
+            color: 'var(--te-gray-dark)'
           }}>
             Draw boxes around characters to annotate text
           </div>
@@ -178,12 +157,9 @@ export default function SetupPanel() {
       </header>
 
       {/* Setup Panel */}
-      <div style={{
-        background: 'white',
-        padding: '20px',
-        borderRadius: '12px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        marginBottom: '15px',
+      <div className="te-panel" style={{
+        padding: 'var(--padding-md)',
+        marginBottom: 'var(--padding-md)',
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
@@ -194,14 +170,14 @@ export default function SetupPanel() {
         {image && (
           <>
             <div style={{
-              margin: '15px 0',
-              padding: '12px',
-              background: '#E3F2FD',
-              border: '1px solid #2196F3',
-              borderRadius: '8px'
+              margin: '12px 0',
+              padding: 'var(--padding-sm)',
+              background: 'var(--te-gray-light)',
+              border: '1px solid var(--te-gray-mid)',
+              borderRadius: 'var(--radius-sm)'
             }}>
-              <p style={{ fontSize: '13px', color: '#1565C0' }}>
-                ✓ Image loaded: {image.width} × {image.height}px
+              <p className="te-small-caps" style={{ color: 'var(--te-green)' }}>
+                Image loaded: {image.width} × {image.height}px
               </p>
             </div>
 
@@ -212,21 +188,14 @@ export default function SetupPanel() {
             {!text && !showTextInput && (
               <button
                 onClick={() => setShowTextInput(true)}
+                className="te-btn"
                 style={{
                   width: '100%',
-                  padding: '12px 24px',
-                  background: '#2196F3',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  transition: 'background 0.2s',
-                  marginBottom: '15px'
+                  background: 'var(--te-blue)',
+                  borderColor: 'var(--te-blue)',
+                  color: 'var(--te-white)',
+                  marginBottom: '12px'
                 }}
-                onMouseOver={(e) => e.target.style.background = '#1976D2'}
-                onMouseOut={(e) => e.target.style.background = '#2196F3'}
               >
                 Write String
               </button>
@@ -236,20 +205,13 @@ export default function SetupPanel() {
             {text && (
               <button
                 onClick={handleStart}
+                className="te-btn"
                 style={{
                   width: '100%',
-                  padding: '12px 24px',
-                  background: '#4CAF50',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  transition: 'background 0.2s'
+                  background: 'var(--te-green)',
+                  borderColor: 'var(--te-green)',
+                  color: 'var(--te-black)'
                 }}
-                onMouseOver={(e) => e.target.style.background = '#45a049'}
-                onMouseOut={(e) => e.target.style.background = '#4CAF50'}
               >
                 Start Annotating
               </button>

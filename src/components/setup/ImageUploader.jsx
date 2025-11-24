@@ -137,15 +137,15 @@ export default function ImageUploader() {
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
       style={{
-        border: '3px dashed #ddd',
-        borderColor: isDragActive ? '#4CAF50' : (isHovering ? '#4CAF50' : '#ddd'),
-        borderRadius: '12px',
-        padding: '40px',
+        border: '2px dashed var(--te-gray-mid)',
+        borderColor: isDragActive ? 'var(--te-green)' : (isHovering ? 'var(--te-green)' : 'var(--te-gray-mid)'),
+        borderRadius: 'var(--radius-sm)',
+        padding: 'var(--padding-lg)',
         textAlign: 'center',
         cursor: 'pointer',
-        transition: 'all 0.3s',
-        background: isDragActive ? '#e8f5e9' : (isHovering ? '#f0f9f0' : '#fafafa'),
-        marginBottom: '15px',
+        transition: 'all 0.2s',
+        background: isDragActive ? 'rgba(74, 222, 128, 0.1)' : (isHovering ? 'var(--te-gray-light)' : 'transparent'),
+        marginBottom: '12px',
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
@@ -155,18 +155,23 @@ export default function ImageUploader() {
       }}
     >
       <input {...getInputProps()} />
-      <div style={{ fontSize: '48px', marginBottom: '10px' }}>
+      <div style={{ fontSize: '32px', marginBottom: '8px' }}>
         📷
       </div>
-      <div style={{ color: '#666', fontSize: '14px' }}>
-        <strong style={{ display: 'block', marginBottom: '8px', fontSize: '16px' }}>
+      <div style={{ color: 'var(--te-black)' }}>
+        <span style={{
+          display: 'block',
+          marginBottom: '8px',
+          fontSize: '12px',
+          fontVariationSettings: "'wght' 500"
+        }}>
           Drop image or ZIP project here
-        </strong>
-        <span style={{ fontSize: '12px', display: 'block', marginBottom: '4px' }}>
+        </span>
+        <span className="te-small-caps" style={{ display: 'block', marginBottom: '4px', color: 'var(--te-gray-dark)' }}>
           Images: JPG, PNG, WEBP, GIF
         </span>
-        <span style={{ fontSize: '12px', color: '#9C27B0', fontWeight: 600 }}>
-          📦 Or drop a ZIP to restore your saved project!
+        <span className="te-small-caps" style={{ color: 'var(--te-orange)' }}>
+          Or drop a ZIP to restore project
         </span>
       </div>
     </div>

@@ -1,5 +1,5 @@
-import { useRef, useEffect } from 'react';
-import { Trash2 } from 'lucide-react';
+import { useRef, useEffect, useState } from 'react';
+import { Trash2, Edit2 } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 
 export default function CharacterPicker() {
@@ -20,6 +20,20 @@ export default function CharacterPicker() {
   const textPositionVariants = useAnnotatorStore((state) => state.textPositionVariants);
   const clearAllPositionVariantsForChar = useAnnotatorStore((state) => state.clearAllPositionVariantsForChar);
   const getVariantsForChar = useAnnotatorStore((state) => state.getVariantsForChar);
+
+  // Mode cancel functions to properly switch to box tool
+  const cancelBrushBox = useAnnotatorStore((state) => state.cancelBrushBox);
+  const cancelAutoSolve = useAnnotatorStore((state) => state.cancelAutoSolve);
+  const cancelRotation = useAnnotatorStore((state) => state.cancelRotation);
+  const cancelBaseline = useAnnotatorStore((state) => state.cancelBaseline);
+  const cancelAngledBaseline = useAnnotatorStore((state) => state.cancelAngledBaseline);
+
+  // Track which character has expanded variants
+  const [expandedChar, setExpandedChar] = useState(null);
+  // Track hovered character for delete button
+  const [hoveredChar, setHoveredChar] = useState(null);
+  // Track if panel is hovered for edit button
+  const [panelHovered, setPanelHovered] = useState(false);
 
   if (uniqueChars.length === 0) return null;
 
@@ -86,152 +100,206 @@ export default function CharacterPicker() {
     );
   };
 
-  const panelStyle = {
-    background: 'white',
-    padding: '10px',
-    borderRadius: '12px',
-    border: '2px solid #ddd',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  };
-
   return (
-    <div style={panelStyle}>
-      {/* Text display with Edit button */}
-      <div style={{ marginBottom: '10px' }}>
-        <div style={{
-          fontSize: '16px',
-          fontWeight: 600,
-          color: '#333',
-          marginBottom: '6px',
-          textAlign: 'center'
-        }}>
-          {text}
-        </div>
+    <div
+      style={{ position: 'relative', display: 'inline-block', paddingRight: '40px', marginRight: '-40px' }}
+      onMouseEnter={() => setPanelHovered(true)}
+      onMouseLeave={() => setPanelHovered(false)}
+    >
+      {/* Edit button - outside panel, show on hover */}
+      {panelHovered && (
         <button
           onClick={handleEditString}
           style={{
-            width: '100%',
-            padding: '6px 12px',
-            background: '#f5f5f5',
-            color: '#333',
-            border: '1px solid #ddd',
-            borderRadius: '6px',
-            fontSize: '11px',
-            fontWeight: 500,
+            position: 'absolute',
+            top: '50%',
+            right: '4px',
+            transform: 'translateY(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'var(--te-gray-panel)',
+            border: '1px solid var(--te-gray-mid)',
+            borderRadius: 'var(--radius-sm)',
+            boxShadow: 'var(--shadow-inner)',
             cursor: 'pointer',
-            transition: 'background 0.2s'
+            padding: '6px'
           }}
-          onMouseOver={(e) => e.target.style.background = '#e0e0e0'}
-          onMouseOut={(e) => e.target.style.background = '#f5f5f5'}
+          title="Edit string"
         >
-          Edit String
+          <Edit2 style={{ width: '12px', height: '12px', color: 'var(--te-black)' }} />
         </button>
-      </div>
+      )}
 
-      {/* Character status list */}
-      <div style={{ marginBottom: '10px' }}>
+      <div className="te-panel" style={{ padding: '8px' }}>
+
+      {/* Horizontal character boxes */}
+      <div style={{
+        display: 'flex',
+        gap: '4px',
+        flexWrap: 'wrap',
+        alignItems: 'flex-start'
+      }}>
         {uniqueChars.map((char, index) => {
           const isCurrent = currentCharIndex === index;
           const count = charCounts[char] || 0;
           const isDrawn = count > 0;
+          const variants = getVariantsForChar(index);
+          const currentSelectedVariant = selectedVariants[index] || 0;
+          const isExpanded = expandedChar === index;
 
           const handleDeleteChar = (e) => {
-            e.stopPropagation(); // Prevent selecting the character
+            e.stopPropagation();
             if (confirm(`Delete all ${count} box(es) for "${char}"?`)) {
-              // Find all boxes for this character and delete them
               const boxesToDelete = boxes
                 .map((box, idx) => ({ box, idx }))
                 .filter(({ box }) => box.char === char)
-                .reverse(); // Delete from end to avoid index shifting
+                .reverse();
 
               boxesToDelete.forEach(({ idx }) => {
                 deleteBox(idx);
               });
 
-              // Deselect if current box was deleted
               if (selectedBox !== null && boxes[selectedBox]?.char === char) {
                 setSelectedBox(null);
               }
             }
           };
 
-          const variants = getVariantsForChar(index);
-          const currentSelectedVariant = selectedVariants[index] || 0;
+          const handleCharClick = () => {
+            cancelBrushBox();
+            cancelAutoSolve();
+            cancelRotation();
+            cancelBaseline();
+            cancelAngledBaseline();
+            setCurrentCharIndex(index);
+            setCurrentTool('box');
+
+            // Toggle expanded state for variants
+            if (variants.length > 1) {
+              setExpandedChar(isExpanded ? null : index);
+            }
+          };
+
+          // Determine background color
+          let bgColor = 'var(--te-gray-light)';
+          if (isCurrent) {
+            bgColor = 'var(--te-orange)';
+          } else if (isDrawn) {
+            bgColor = 'var(--te-green)';
+          }
 
           return (
             <div
               key={index}
+              onClick={handleCharClick}
+              onMouseEnter={() => setHoveredChar(index)}
+              onMouseLeave={() => setHoveredChar(null)}
               style={{
-                padding: '10px',
-                marginBottom: '8px',
-                background: isCurrent ? '#E3F2FD' : '#f9f9f9',
-                border: `2px solid ${isCurrent ? '#2196F3' : '#ddd'}`,
-                borderRadius: '6px',
-                transition: 'all 0.2s'
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                padding: '8px 6px',
+                borderRadius: 'var(--radius-sm)',
+                background: bgColor,
+                border: `1px solid ${isCurrent ? 'var(--te-orange)' : isDrawn ? 'var(--te-green)' : 'var(--te-gray-mid)'}`,
+                boxShadow: 'var(--shadow-inner)',
+                cursor: 'pointer',
+                minWidth: '44px',
+                position: 'relative'
               }}
             >
-              {/* Character header */}
-              <div
-                onClick={() => {
-                  setCurrentCharIndex(index);
-                  setCurrentTool('box');
-                }}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: '12px',
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  color: '#333'
-                }}>
-                  {char}
-                </div>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  <div style={{
-                    fontSize: '12px',
-                    color: isDrawn ? '#4CAF50' : '#999',
-                    fontWeight: 500
-                  }}>
-                    {isDrawn ? `${count} drawn` : 'Not drawn'}
-                  </div>
-                  {isDrawn && (
-                    <button
-                      onClick={handleDeleteChar}
-                      style={{
-                        padding: '4px',
-                        background: 'none',
-                        border: 'none',
-                        color: '#f44336',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: '4px',
-                        transition: 'background 0.2s'
-                      }}
-                      onMouseOver={(e) => e.currentTarget.style.background = '#ffebee'}
-                      onMouseOut={(e) => e.currentTarget.style.background = 'none'}
-                      title={`Delete all boxes for "${char}"`}
-                    >
-                      <Trash2 style={{ width: '14px', height: '14px' }} />
-                    </button>
-                  )}
-                </div>
-              </div>
+              {/* Character */}
+              <span style={{
+                fontSize: '20px',
+                fontVariationSettings: "'wght' 300",
+                color: isCurrent ? 'var(--te-white)' : 'var(--te-black)',
+                lineHeight: 1
+              }}>
+                {char}
+              </span>
 
-              {/* Variant thumbnails (only if multiple variants exist) */}
+              {/* Count indicator - centered, only show on hover if more than 1 */}
+              {count > 1 && hoveredChar === index && (
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  fontSize: '10px',
+                  fontVariationSettings: "'wght' 600",
+                  padding: '2px 6px',
+                  borderRadius: '3px',
+                  background: isCurrent ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.7)',
+                  color: isCurrent ? 'var(--te-orange)' : 'var(--te-white)'
+                }}>
+                  {count}
+                </div>
+              )}
+
+              {/* Delete button (only if drawn and hovered) */}
+              {isDrawn && hoveredChar === index && (
+                <button
+                  onClick={handleDeleteChar}
+                  style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-4px',
+                    width: '14px',
+                    height: '14px',
+                    padding: 0,
+                    background: 'var(--te-red)',
+                    border: 'none',
+                    borderRadius: '50%',
+                    color: 'var(--te-white)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '8px'
+                  }}
+                  title={`Delete all boxes for "${char}"`}
+                >
+                  <Trash2 style={{ width: '8px', height: '8px' }} />
+                </button>
+              )}
+
+              {/* Variant indicator */}
               {variants.length > 1 && (
-                <>
-                  <div style={{ marginTop: '8px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <div style={{
+                  position: 'absolute',
+                  bottom: '-2px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: '4px',
+                  height: '4px',
+                  borderRadius: '50%',
+                  background: isCurrent ? 'var(--te-white)' : 'var(--te-blue)'
+                }} />
+              )}
+
+              {/* Expanded variants dropdown */}
+              {isExpanded && variants.length > 1 && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    marginTop: '8px',
+                    padding: '6px',
+                    background: 'var(--te-white)',
+                    border: '1px solid var(--te-gray-mid)',
+                    borderRadius: 'var(--radius-sm)',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    zIndex: 100,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px'
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                     {variants.map((box) => (
                       <VariantThumbnail
                         key={box.variantId}
@@ -243,9 +311,8 @@ export default function CharacterPicker() {
                     ))}
                   </div>
 
-                  {/* Clear Overrides button (only if position overrides exist) */}
+                  {/* Clear Overrides button */}
                   {(() => {
-                    const char = uniqueChars[index];
                     const overrideCount = Object.keys(textPositionVariants).filter(pos => {
                       return text[pos] === char;
                     }).length;
@@ -258,40 +325,25 @@ export default function CharacterPicker() {
                           e.stopPropagation();
                           clearAllPositionVariantsForChar(char);
                         }}
+                        className="te-btn te-btn-ghost"
                         style={{
-                          marginTop: '8px',
-                          padding: '4px 8px',
-                          background: '#f3e5f5',
-                          color: '#9C27B0',
-                          border: '1px solid #9C27B0',
-                          borderRadius: '4px',
-                          fontSize: '10px',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          transition: 'all 0.2s',
-                          width: '100%'
+                          width: '100%',
+                          height: '24px',
+                          fontSize: '9px'
                         }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = '#9C27B0';
-                          e.currentTarget.style.color = 'white';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = '#f3e5f5';
-                          e.currentTarget.style.color = '#9C27B0';
-                        }}
-                        title={`Clear ${overrideCount} position override${overrideCount !== 1 ? 's' : ''} for '${char}'`}
                       >
                         Clear {overrideCount} Override{overrideCount !== 1 ? 's' : ''}
                       </button>
                     );
                   })()}
-                </>
+                </div>
               )}
             </div>
           );
         })}
-      </div>
 
+      </div>
+      </div>
     </div>
   );
 }
@@ -310,19 +362,19 @@ function VariantThumbnail({ box, isSelected, onClick, renderFn }) {
   return (
     <div
       onClick={(e) => {
-        e.stopPropagation(); // Don't trigger character selection
+        e.stopPropagation();
         onClick();
       }}
       style={{
-        width: '36px',
-        height: '36px',
-        border: `2px solid ${isSelected ? '#2196F3' : '#ddd'}`,
-        borderRadius: '4px',
+        width: '44px',
+        height: '40px',
+        border: `2px solid ${isSelected ? 'var(--te-orange)' : 'var(--te-gray-mid)'}`,
+        borderRadius: 'var(--radius-sm)',
         overflow: 'hidden',
         cursor: 'pointer',
-        background: isSelected ? '#E3F2FD' : 'white',
-        transition: 'all 0.2s',
-        boxShadow: isSelected ? '0 0 0 2px rgba(33, 150, 243, 0.2)' : 'none'
+        background: isSelected ? 'var(--te-orange)' : 'var(--te-white)',
+        transition: 'all 0.15s',
+        boxShadow: 'var(--shadow-inner)'
       }}
       title={`Variant ${box.variantId + 1}${isSelected ? ' (selected)' : ''}`}
     >
@@ -331,7 +383,7 @@ function VariantThumbnail({ box, isSelected, onClick, renderFn }) {
         style={{
           width: '100%',
           height: '100%',
-          objectFit: 'contain',
+          objectFit: 'cover',
           display: 'block'
         }}
       />

@@ -1,7 +1,7 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 import ToolPalette from './ToolPalette';
-import ZoomControls from './ZoomControls';
+import RightModePanel from './RightModePanel';
 
 export default function AnnotationCanvas() {
   const canvasRef = useRef(null);
@@ -41,6 +41,8 @@ export default function AnnotationCanvas() {
   const startRotationMode = useAnnotatorStore((state) => state.startRotationMode);
   const startBaselineMode = useAnnotatorStore((state) => state.startBaselineMode);
   const startAngledBaselineMode = useAnnotatorStore((state) => state.startAngledBaselineMode);
+  const startZoomMode = useAnnotatorStore((state) => state.startZoomMode);
+  const cancelZoom = useAnnotatorStore((state) => state.cancelZoom);
   const zoomLevel = useAnnotatorStore((state) => state.zoomLevel);
   const panOffset = useAnnotatorStore((state) => state.panOffset);
   const isPanning = useAnnotatorStore((state) => state.isPanning);
@@ -75,6 +77,10 @@ export default function AnnotationCanvas() {
   const setBrushBoxSize = useAnnotatorStore((state) => state.setBrushBoxSize);
   const confirmBrushBox = useAnnotatorStore((state) => state.confirmBrushBox);
   const nextChar = useAnnotatorStore((state) => state.nextChar);
+  const brushSizeDragStart = useAnnotatorStore((state) => state.brushSizeDragStart);
+  const brushSizeStartValue = useAnnotatorStore((state) => state.brushSizeStartValue);
+  const setBrushSizeDragStart = useAnnotatorStore((state) => state.setBrushSizeDragStart);
+  const clearBrushSizeDrag = useAnnotatorStore((state) => state.clearBrushSizeDrag);
 
   // Rotation state
   const isRotationMode = useAnnotatorStore((state) => state.isRotationMode);
@@ -103,16 +109,43 @@ export default function AnnotationCanvas() {
   const setTempAngledBaselinePos = useAnnotatorStore((state) => state.setTempAngledBaselinePos);
   const addAngledBaseline = useAnnotatorStore((state) => state.addAngledBaseline);
 
+  // Zoom tool state
+  const isZoomMode = useAnnotatorStore((state) => state.isZoomMode);
+  const zoomDragStart = useAnnotatorStore((state) => state.zoomDragStart);
+  const zoomStartLevel = useAnnotatorStore((state) => state.zoomStartLevel);
+  const setZoomDragStart = useAnnotatorStore((state) => state.setZoomDragStart);
+  const clearZoomDrag = useAnnotatorStore((state) => state.clearZoomDrag);
+  const setZoomLevel = useAnnotatorStore((state) => state.setZoomLevel);
+
   // Use temp tool override if Cmd is held, otherwise use current tool
   const effectiveTool = tempToolOverride || currentTool;
 
-  // Auto-fit image to view on mount
+  // Auto-fit image to view on mount and when container resizes
   useEffect(() => {
     if (!image || !containerRef.current) return;
 
-    const containerRect = containerRef.current.getBoundingClientRect();
-    fitToView(image.width, image.height, containerRect.width, containerRect.height);
-  }, [image]); // Only run when image changes (initial load)
+    const container = containerRef.current;
+
+    const doFit = () => {
+      const containerRect = container.getBoundingClientRect();
+      if (containerRect.width > 0 && containerRect.height > 0) {
+        fitToView(image.width, image.height, containerRect.width, containerRect.height);
+      }
+    };
+
+    // Initial fit
+    doFit();
+
+    // Fit on resize
+    const resizeObserver = new ResizeObserver(() => {
+      doFit();
+    });
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [image, fitToView]); // Run when image changes or fitToView updates
 
   // Handle keyboard shortcuts for tool selection
   useEffect(() => {
@@ -130,6 +163,7 @@ export default function AnnotationCanvas() {
         cancelRotation();
         cancelBaseline();
         cancelAngledBaseline();
+        cancelZoom();
         setCurrentTool('pointer');
       } else if (e.key === 'm' || e.key === 'M') {
         // M for box mode
@@ -138,6 +172,7 @@ export default function AnnotationCanvas() {
         cancelRotation();
         cancelBaseline();
         cancelAngledBaseline();
+        cancelZoom();
         setCurrentTool('box');
       } else if (e.key === 'b' || e.key === 'B') {
         // B for brush
@@ -145,7 +180,20 @@ export default function AnnotationCanvas() {
           alert('Please upload an image first.');
           return;
         }
+        cancelZoom();
         startBrushBoxMode();
+      } else if (e.key === 'z' || e.key === 'Z') {
+        // Z for zoom
+        if (!image) {
+          alert('Please upload an image first.');
+          return;
+        }
+        cancelBrushBox();
+        cancelAutoSolve();
+        cancelRotation();
+        cancelBaseline();
+        cancelAngledBaseline();
+        startZoomMode();
       }
     };
 
@@ -162,7 +210,9 @@ export default function AnnotationCanvas() {
     cancelRotation,
     cancelBaseline,
     cancelAngledBaseline,
-    startBrushBoxMode
+    cancelZoom,
+    startBrushBoxMode,
+    startZoomMode
   ]);
 
   // Handle Cmd key for temporary pointer mode
@@ -177,7 +227,8 @@ export default function AnnotationCanvas() {
           isSelectingAutoSolveRegion,
           isRotationMode,
           isBaselineMode,
-          isAngledBaselineMode
+          isAngledBaselineMode,
+          isZoomMode
         };
         setSavedModeState(modeState);
 
@@ -187,6 +238,7 @@ export default function AnnotationCanvas() {
         cancelRotation();
         cancelBaseline();
         cancelAngledBaseline();
+        cancelZoom();
 
         // Switch to pointer tool
         setCurrentTool('pointer');
@@ -221,6 +273,8 @@ export default function AnnotationCanvas() {
           startBaselineMode();
         } else if (savedModeState.isAngledBaselineMode) {
           startAngledBaselineMode();
+        } else if (savedModeState.isZoomMode) {
+          startZoomMode();
         }
 
         setSavedModeState(null);
@@ -243,17 +297,20 @@ export default function AnnotationCanvas() {
     isRotationMode,
     isBaselineMode,
     isAngledBaselineMode,
+    isZoomMode,
     setCurrentTool,
     cancelBrushBox,
     cancelAutoSolve,
     cancelRotation,
     cancelBaseline,
     cancelAngledBaseline,
+    cancelZoom,
     startBrushBoxMode,
     startAutoSolveRegionSelection,
     startRotationMode,
     startBaselineMode,
-    startAngledBaselineMode
+    startAngledBaselineMode,
+    startZoomMode
   ]);
 
   // Draw the canvas
@@ -262,11 +319,16 @@ export default function AnnotationCanvas() {
     if (!canvas || !image) return;
 
     const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = window.devicePixelRatio * 4 || 1;
 
-    // Set canvas size at natural image dimensions (zoom handled by CSS scale)
-    const canvasWidth = image.width;
-    const canvasHeight = image.height;
+    // Calculate canvas size to fit rotated image without clipping
+    const angleRad = Math.abs(imageRotation * Math.PI / 180);
+    const cos = Math.abs(Math.cos(angleRad));
+    const sin = Math.abs(Math.sin(angleRad));
+
+    // Bounding box of rotated rectangle
+    const canvasWidth = Math.ceil(image.width * cos + image.height * sin);
+    const canvasHeight = Math.ceil(image.height * cos + image.width * sin);
 
     // Helper function to extend line to canvas edges
     const extendLineToCanvasEdges = (centerX, centerY, angleRad, canvasWidth, canvasHeight) => {
@@ -340,6 +402,10 @@ export default function AnnotationCanvas() {
     // Apply rotation (without pan - pan is applied via CSS transform)
     ctx.save();
 
+    // Calculate offset to center the image in the larger canvas
+    const offsetX = (canvasWidth - image.width) / 2;
+    const offsetY = (canvasHeight - image.height) / 2;
+
     // Apply rotation if set
     if (imageRotation !== 0) {
       const centerX = canvasWidth / 2;
@@ -349,12 +415,15 @@ export default function AnnotationCanvas() {
       ctx.translate(-centerX, -centerY);
     }
 
-    // Draw image at natural size (zoom handled by CSS scale)
-    ctx.drawImage(image, 0, 0, canvasWidth, canvasHeight);
+    // Draw image centered in the larger canvas
+    ctx.drawImage(image, offsetX, offsetY, image.width, image.height);
 
     ctx.restore();
 
     // Draw existing boxes (scaled for zoom) - OUTSIDE rotation transform
+    // UI sizes are divided by zoomLevel to remain constant on screen
+    const uiScale = 1 / zoomLevel;
+
     boxes.forEach((box, index) => {
       const isSelected = selectedBox === index;
       const isHovered = hoveredBox === index && !isSelected;
@@ -365,34 +434,39 @@ export default function AnnotationCanvas() {
         return;
       }
 
+      // Apply offset to box coordinates for drawing
+      const drawX = box.x + offsetX;
+      const drawY = box.y + offsetY;
+
       // Highlight hovered box with a fill
       if (isHovered) {
         ctx.fillStyle = 'rgba(33, 150, 243, 0.1)';
-        ctx.fillRect(box.x, box.y, box.width, box.height);
+        ctx.fillRect(drawX, drawY, box.width, box.height);
       }
 
       ctx.strokeStyle = isSelected ? '#2196F3' : isHovered ? '#FF9800' : '#4CAF50';
-      ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 2;
-      ctx.strokeRect(box.x, box.y, box.width, box.height);
+      ctx.lineWidth = (isSelected ? 3 : isHovered ? 2.5 : 2) * uiScale;
+      ctx.strokeRect(drawX, drawY, box.width, box.height);
 
       // Draw character label with smart positioning to avoid edge cutoff
       ctx.fillStyle = isSelected ? '#2196F3' : isHovered ? '#FF9800' : '#4CAF50';
-      ctx.font = `bold 16px Arial`;
+      const fontSize = 16 * uiScale;
+      ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
 
       // Calculate label position based on box location
-      const labelPadding = 4;
-      const labelHeight = 16; // Font size
-      let labelX = box.x + labelPadding;
-      let labelY = box.y + labelHeight + labelPadding;
+      const labelPadding = 4 * uiScale;
+      const labelHeight = fontSize;
+      let labelX = drawX + labelPadding;
+      let labelY = drawY + labelHeight + labelPadding;
 
       // If box is near top edge, draw label below the box instead
-      if (box.y < labelHeight + labelPadding + 5) {
-        labelY = (box.y + box.height) + labelHeight + labelPadding;
+      if (box.y < labelHeight + labelPadding + 5 * uiScale) {
+        labelY = (drawY + box.height) + labelHeight + labelPadding;
       }
 
       // If box is near left edge, ensure label doesn't go off-canvas
       if (box.x < labelPadding) {
-        labelX = labelPadding;
+        labelX = offsetX + labelPadding;
       }
 
       ctx.fillText(box.char, labelX, labelY);
@@ -402,40 +476,40 @@ export default function AnnotationCanvas() {
       const isSelectedVariant = box.variantId === selectedVariantId;
       if (isSelectedVariant && boxes.filter(b => b.charIndex === box.charIndex).length > 1) {
         // Only show star if there are multiple variants for this character
-        const starSize = 12;
-        const starX = (box.x + box.width) - starSize - 2;
-        const starY = box.y + starSize + 2;
+        const starSize = 12 * uiScale;
+        const starX = (drawX + box.width) - starSize - 2 * uiScale;
+        const starY = drawY + starSize + 2 * uiScale;
         ctx.fillStyle = '#FFD700'; // Gold color
-        ctx.font = `${starSize}px Arial`;
+        ctx.font = `${starSize}px Antarctica, sans-serif`;
         ctx.fillText('⭐', starX, starY);
       }
 
       // Draw corner handles for selected or hovered box
       if (isSelected || isHovered) {
-        const handleSize = 8;
+        const handleSize = 8 * uiScale;
         const corners = [
-          { x: box.x, y: box.y }, // nw
-          { x: (box.x + box.width), y: box.y }, // ne
-          { x: box.x, y: (box.y + box.height) }, // sw
-          { x: (box.x + box.width), y: (box.y + box.height) }, // se
+          { x: drawX, y: drawY }, // nw
+          { x: (drawX + box.width), y: drawY }, // ne
+          { x: drawX, y: (drawY + box.height) }, // sw
+          { x: (drawX + box.width), y: (drawY + box.height) }, // se
         ];
 
         corners.forEach(corner => {
           ctx.fillStyle = isSelected ? '#2196F3' : '#FF9800';
           ctx.fillRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
           ctx.strokeStyle = 'white';
-          ctx.lineWidth = 1;
+          ctx.lineWidth = 1 * uiScale;
           ctx.strokeRect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
         });
 
         // Draw edge handles (midpoint of each side)
-        const edgeHandleWidth = 20;
-        const edgeHandleHeight = 6;
+        const edgeHandleWidth = 20 * uiScale;
+        const edgeHandleHeight = 6 * uiScale;
         const edges = [
-          { x: (box.x + box.width / 2), y: box.y, type: 'horizontal' }, // top
-          { x: (box.x + box.width / 2), y: (box.y + box.height), type: 'horizontal' }, // bottom
-          { x: box.x, y: (box.y + box.height / 2), type: 'vertical' }, // left
-          { x: (box.x + box.width), y: (box.y + box.height / 2), type: 'vertical' }, // right
+          { x: (drawX + box.width / 2), y: drawY, type: 'horizontal' }, // top
+          { x: (drawX + box.width / 2), y: (drawY + box.height), type: 'horizontal' }, // bottom
+          { x: drawX, y: (drawY + box.height / 2), type: 'vertical' }, // left
+          { x: (drawX + box.width), y: (drawY + box.height / 2), type: 'vertical' }, // right
         ];
 
         edges.forEach(edge => {
@@ -443,12 +517,12 @@ export default function AnnotationCanvas() {
           if (edge.type === 'horizontal') {
             ctx.fillRect(edge.x - edgeHandleWidth / 2, edge.y - edgeHandleHeight / 2, edgeHandleWidth, edgeHandleHeight);
             ctx.strokeStyle = 'white';
-            ctx.lineWidth = 1;
+            ctx.lineWidth = 1 * uiScale;
             ctx.strokeRect(edge.x - edgeHandleWidth / 2, edge.y - edgeHandleHeight / 2, edgeHandleWidth, edgeHandleHeight);
           } else {
             ctx.fillRect(edge.x - edgeHandleHeight / 2, edge.y - edgeHandleWidth / 2, edgeHandleHeight, edgeHandleWidth);
             ctx.strokeStyle = 'white';
-            ctx.lineWidth = 1;
+            ctx.lineWidth = 1 * uiScale;
             ctx.strokeRect(edge.x - edgeHandleHeight / 2, edge.y - edgeHandleWidth / 2, edgeHandleHeight, edgeHandleWidth);
           }
         });
@@ -458,32 +532,36 @@ export default function AnnotationCanvas() {
     // Draw current box being drawn
     if (currentBox) {
       ctx.save();
+      const drawX = currentBox.x + offsetX;
+      const drawY = currentBox.y + offsetY;
+
       ctx.strokeStyle = '#FF9800';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
-      ctx.strokeRect(currentBox.x, currentBox.y, currentBox.width, currentBox.height);
+      ctx.lineWidth = 2 * uiScale;
+      ctx.setLineDash([5 * uiScale, 5 * uiScale]);
+      ctx.strokeRect(drawX, drawY, currentBox.width, currentBox.height);
       ctx.setLineDash([]);
 
       // Draw character label for currently drawn box with smart positioning
       const currentChar = uniqueChars[currentCharIndex];
       if (currentChar) {
         ctx.fillStyle = '#FF9800';
-        ctx.font = `bold 16px Arial`;
+        const fontSize = 16 * uiScale;
+        ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
 
         // Calculate label position based on box location
-        const labelPadding = 4;
-        const labelHeight = 16; // Font size
-        let labelX = currentBox.x + labelPadding;
-        let labelY = currentBox.y + labelHeight + labelPadding;
+        const labelPadding = 4 * uiScale;
+        const labelHeight = fontSize;
+        let labelX = drawX + labelPadding;
+        let labelY = drawY + labelHeight + labelPadding;
 
         // If box is near top edge, draw label below the box instead
-        if (currentBox.y < labelHeight + labelPadding + 5) {
-          labelY = (currentBox.y + currentBox.height) + labelHeight + labelPadding;
+        if (currentBox.y < labelHeight + labelPadding + 5 * uiScale) {
+          labelY = (drawY + currentBox.height) + labelHeight + labelPadding;
         }
 
         // If box is near left edge, ensure label doesn't go off-canvas
         if (currentBox.x < labelPadding) {
-          labelX = labelPadding;
+          labelX = offsetX + labelPadding;
         }
 
         ctx.fillText(currentChar, labelX, labelY);
@@ -498,36 +576,33 @@ export default function AnnotationCanvas() {
 
       // Draw completed regions
       autoSolveRegions.forEach((region, index) => {
+        const drawX = region.x + offsetX;
+        const drawY = region.y + offsetY;
+
         ctx.strokeStyle = '#2196F3';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(region.x, region.y, region.width, region.height);
+        ctx.lineWidth = 3 * uiScale;
+        ctx.strokeRect(drawX, drawY, region.width, region.height);
         ctx.fillStyle = 'rgba(33, 150, 243, 0.1)';
-        ctx.fillRect(region.x, region.y, region.width, region.height);
+        ctx.fillRect(drawX, drawY, region.width, region.height);
 
         // Draw region number
         ctx.fillStyle = '#2196F3';
-        ctx.font = `bold 20px Arial`;
-        ctx.fillText(`${index + 1}`, region.x + 8, region.y + 28);
+        const fontSize = 20 * uiScale;
+        ctx.font = `500 ${fontSize}px Antarctica, sans-serif`;
+        ctx.fillText(`${index + 1}`, drawX + 8 * uiScale, drawY + 28 * uiScale);
       });
 
       // Draw current region being drawn
       if (currentAutoSolveRegion && currentAutoSolveRegion.width > 0 && currentAutoSolveRegion.height > 0) {
+        const drawX = currentAutoSolveRegion.x + offsetX;
+        const drawY = currentAutoSolveRegion.y + offsetY;
+
         ctx.strokeStyle = '#FF9800';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([8, 8]);
-        ctx.strokeRect(
-          currentAutoSolveRegion.x,
-          currentAutoSolveRegion.y,
-          currentAutoSolveRegion.width,
-          currentAutoSolveRegion.height
-        );
+        ctx.lineWidth = 3 * uiScale;
+        ctx.setLineDash([8 * uiScale, 8 * uiScale]);
+        ctx.strokeRect(drawX, drawY, currentAutoSolveRegion.width, currentAutoSolveRegion.height);
         ctx.fillStyle = 'rgba(255, 152, 0, 0.1)';
-        ctx.fillRect(
-          currentAutoSolveRegion.x,
-          currentAutoSolveRegion.y,
-          currentAutoSolveRegion.width,
-          currentAutoSolveRegion.height
-        );
+        ctx.fillRect(drawX, drawY, currentAutoSolveRegion.width, currentAutoSolveRegion.height);
         ctx.setLineDash([]);
       }
 
@@ -550,9 +625,9 @@ export default function AnnotationCanvas() {
           ctx.lineJoin = 'round';
 
           ctx.beginPath();
-          ctx.moveTo(points[0].x, points[0].y);
+          ctx.moveTo(points[0].x + offsetX, points[0].y + offsetY);
           for (let i = 1; i < points.length; i++) {
-            ctx.lineTo(points[i].x, points[i].y);
+            ctx.lineTo(points[i].x + offsetX, points[i].y + offsetY);
           }
           ctx.stroke();
         }
@@ -566,9 +641,9 @@ export default function AnnotationCanvas() {
         ctx.lineJoin = 'round';
 
         ctx.beginPath();
-        ctx.moveTo(currentStroke[0].x, currentStroke[0].y);
+        ctx.moveTo(currentStroke[0].x + offsetX, currentStroke[0].y + offsetY);
         for (let i = 1; i < currentStroke.length; i++) {
-          ctx.lineTo(currentStroke[i].x, currentStroke[i].y);
+          ctx.lineTo(currentStroke[i].x + offsetX, currentStroke[i].y + offsetY);
         }
         ctx.stroke();
       }
@@ -576,9 +651,9 @@ export default function AnnotationCanvas() {
       // Draw brush cursor preview at mouse position
       if (mousePos.x > 0 && mousePos.y > 0 && !isDrawing) {
         ctx.strokeStyle = '#4CAF50';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 * uiScale;
         ctx.beginPath();
-        ctx.arc(mousePos.x, mousePos.y, (brushBoxSize / 2), 0, Math.PI * 2);
+        ctx.arc(mousePos.x + offsetX, mousePos.y + offsetY, (brushBoxSize / 2), 0, Math.PI * 2);
         ctx.stroke();
       }
 
@@ -589,26 +664,29 @@ export default function AnnotationCanvas() {
     if (isRotationMode && rotationLineStart) {
       ctx.save();
 
+      const startX = rotationLineStart.x + offsetX;
+      const startY = rotationLineStart.y + offsetY;
+
       // Draw the line
       ctx.strokeStyle = '#9C27B0';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3 * uiScale;
       ctx.beginPath();
-      ctx.moveTo(rotationLineStart.x, rotationLineStart.y);
+      ctx.moveTo(startX, startY);
 
       if (rotationLineEnd) {
-        ctx.lineTo(rotationLineEnd.x, rotationLineEnd.y);
-      }
-      ctx.stroke();
+        const endX = rotationLineEnd.x + offsetX;
+        const endY = rotationLineEnd.y + offsetY;
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
 
-      // Draw start and end points
-      ctx.fillStyle = '#9C27B0';
-      ctx.beginPath();
-      ctx.arc(rotationLineStart.x, rotationLineStart.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-
-      if (rotationLineEnd) {
+        // Draw start and end points
+        ctx.fillStyle = '#9C27B0';
         ctx.beginPath();
-        ctx.arc(rotationLineEnd.x, rotationLineEnd.y, 5, 0, Math.PI * 2);
+        ctx.arc(startX, startY, 5 * uiScale, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(endX, endY, 5 * uiScale, 0, Math.PI * 2);
         ctx.fill();
 
         // Show angle hint
@@ -620,8 +698,8 @@ export default function AnnotationCanvas() {
           const angleRad = Math.atan2(dy, dx);
           const angleDeg = angleRad * (180 / Math.PI);
 
-          const midX = ((rotationLineStart.x + rotationLineEnd.x) / 2);
-          const midY = ((rotationLineStart.y + rotationLineEnd.y) / 2);
+          const midX = (startX + endX) / 2;
+          const midY = (startY + endY) / 2;
 
           ctx.fillStyle = 'rgba(156, 39, 176, 0.9)';
           ctx.fillRect(midX - 40, midY - 20, 80, 30);
@@ -631,6 +709,14 @@ export default function AnnotationCanvas() {
           ctx.textBaseline = 'middle';
           ctx.fillText(`${angleDeg.toFixed(1)}°`, midX, midY);
         }
+      } else {
+        ctx.stroke();
+
+        // Draw start point
+        ctx.fillStyle = '#9C27B0';
+        ctx.beginPath();
+        ctx.arc(startX, startY, 5 * uiScale, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       ctx.restore();
@@ -642,36 +728,40 @@ export default function AnnotationCanvas() {
 
       // Draw all saved baselines
       baselines.forEach((baseline) => {
+        const drawY = baseline.y + offsetY;
+
         ctx.strokeStyle = baseline.color;
         ctx.lineWidth = 2;
         ctx.setLineDash([10, 5]);
         ctx.beginPath();
-        ctx.moveTo(0, baseline.y);
-        ctx.lineTo(canvasWidth, baseline.y);
+        ctx.moveTo(0, drawY);
+        ctx.lineTo(canvasWidth, drawY);
         ctx.stroke();
         ctx.setLineDash([]);
 
         // Draw baseline label
         ctx.fillStyle = baseline.color;
-        ctx.font = `bold 12px Arial`;
-        ctx.fillText(`Baseline ${baseline.id}`, 5, baseline.y - 5);
+        ctx.font = `500 12px Antarctica, sans-serif`;
+        ctx.fillText(`Baseline ${baseline.id}`, 5, drawY - 5);
       });
 
       // Draw temporary baseline being dragged
       if (isBaselineMode && tempBaselineY !== null) {
+        const drawY = tempBaselineY + offsetY;
+
         ctx.strokeStyle = '#FF9800';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 3 * uiScale;
         ctx.setLineDash([10, 5]);
         ctx.beginPath();
-        ctx.moveTo(0, tempBaselineY);
-        ctx.lineTo(canvasWidth, tempBaselineY);
+        ctx.moveTo(0, drawY);
+        ctx.lineTo(canvasWidth, drawY);
         ctx.stroke();
         ctx.setLineDash([]);
 
         // Draw label
         ctx.fillStyle = '#FF9800';
-        ctx.font = `bold 14px Arial`;
-        ctx.fillText('New Baseline', 5, tempBaselineY - 5);
+        ctx.font = `500 14px Antarctica, sans-serif`;
+        ctx.fillText('New Baseline', 5, drawY - 5);
       }
 
       ctx.restore();
@@ -697,16 +787,16 @@ export default function AnnotationCanvas() {
         ctx.lineWidth = 2;
         ctx.setLineDash([10, 5]);
         ctx.beginPath();
-        ctx.moveTo(extendedStart.x, extendedStart.y);
-        ctx.lineTo(extendedEnd.x, extendedEnd.y);
+        ctx.moveTo(extendedStart.x + offsetX, extendedStart.y + offsetY);
+        ctx.lineTo(extendedEnd.x + offsetX, extendedEnd.y + offsetY);
         ctx.stroke();
         ctx.setLineDash([]);
 
         // Draw baseline label
         ctx.fillStyle = baseline.color;
-        ctx.font = `bold 12px Arial`;
-        const midX = centerX;
-        const midY = centerY;
+        ctx.font = `500 12px Antarctica, sans-serif`;
+        const midX = centerX + offsetX;
+        const midY = centerY + offsetY;
         ctx.fillText(`Angled ${baseline.id} (${baseline.angle.toFixed(1)}°)`, midX + 5, midY - 5);
       });
 
@@ -731,18 +821,18 @@ export default function AnnotationCanvas() {
 
           // Draw extended line
           ctx.strokeStyle = '#FF9800';
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 3 * uiScale;
           ctx.setLineDash([10, 5]);
           ctx.beginPath();
-          ctx.moveTo(extendedStart.x, extendedStart.y);
-          ctx.lineTo(extendedEnd.x, extendedEnd.y);
+          ctx.moveTo(extendedStart.x + offsetX, extendedStart.y + offsetY);
+          ctx.lineTo(extendedEnd.x + offsetX, extendedEnd.y + offsetY);
           ctx.stroke();
           ctx.setLineDash([]);
 
           // Draw label
           ctx.fillStyle = '#FF9800';
-          ctx.font = `bold 14px Arial`;
-          ctx.fillText(`${angleDeg.toFixed(1)}°`, centerX + 5, centerY - 5);
+          ctx.font = `500 14px Antarctica, sans-serif`;
+          ctx.fillText(`${angleDeg.toFixed(1)}°`, centerX + offsetX + 5, centerY + offsetY - 5);
         }
         // Subsequent baselines: Draw baseline at stored angle
         else if (angledBaselines.length > 0 && tempAngledBaselinePos) {
@@ -761,18 +851,18 @@ export default function AnnotationCanvas() {
           const end = extended.end;
 
           ctx.strokeStyle = '#FF9800';
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 3 * uiScale;
           ctx.setLineDash([10, 5]);
           ctx.beginPath();
-          ctx.moveTo(start.x, start.y);
-          ctx.lineTo(end.x, end.y);
+          ctx.moveTo(start.x + offsetX, start.y + offsetY);
+          ctx.lineTo(end.x + offsetX, end.y + offsetY);
           ctx.stroke();
           ctx.setLineDash([]);
 
           // Draw label
           ctx.fillStyle = '#FF9800';
-          ctx.font = `bold 14px Arial`;
-          ctx.fillText('New Angled Baseline', tempAngledBaselinePos.x + 5, tempAngledBaselinePos.y - 5);
+          ctx.font = `500 14px Antarctica, sans-serif`;
+          ctx.fillText('New Angled Baseline', tempAngledBaselinePos.x + offsetX + 5, tempAngledBaselinePos.y + offsetY - 5);
         }
       }
 
@@ -786,9 +876,18 @@ export default function AnnotationCanvas() {
 
     const rect = canvas.getBoundingClientRect();
 
-    // Get mouse position relative to canvas (accounting for zoom only)
-    const x = (e.clientX - rect.left) / zoomLevel;
-    const y = (e.clientY - rect.top) / zoomLevel;
+    // Calculate offset for rotated canvas
+    const angleRad = Math.abs(imageRotation * Math.PI / 180);
+    const cos = Math.abs(Math.cos(angleRad));
+    const sin = Math.abs(Math.sin(angleRad));
+    const canvasWidth = image.width * cos + image.height * sin;
+    const canvasHeight = image.height * cos + image.width * sin;
+    const offsetX = (canvasWidth - image.width) / 2;
+    const offsetY = (canvasHeight - image.height) / 2;
+
+    // Get mouse position relative to canvas, then subtract offset to get image coordinates
+    const x = (e.clientX - rect.left) / zoomLevel - offsetX;
+    const y = (e.clientY - rect.top) / zoomLevel - offsetY;
 
     // TODO: Need to account for imageRotation
     // Problem: Image is rotated via canvas context transform,
@@ -860,8 +959,14 @@ export default function AnnotationCanvas() {
       return;
     }
 
-    // Brush box mode - start drawing a stroke
+    // Brush box mode - start drawing a stroke or adjusting brush size
     if (isBrushBoxMode) {
+      // Shift+drag to adjust brush size
+      if (e.shiftKey) {
+        setBrushSizeDragStart(e.clientX, brushBoxSize);
+        return;
+      }
+
       // Don't allow drawing if no character is selected (all done)
       if (currentCharIndex === -1) {
         return;
@@ -906,6 +1011,23 @@ export default function AnnotationCanvas() {
       return;
     }
 
+    // Zoom mode - drag to zoom
+    if (isZoomMode && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      // Store client position for delta calculation and image position for zoom center
+      const imageX = (e.clientX - rect.left) / zoomLevel;
+      const imageY = (e.clientY - rect.top) / zoomLevel;
+      setZoomDragStart({
+        clientX: e.clientX,
+        clientY: e.clientY,
+        imageX,
+        imageY,
+        panX: panOffset.x,
+        panY: panOffset.y
+      }, zoomLevel);
+      return;
+    }
+
     // Pointer mode: only allow selecting, moving, and resizing existing boxes
     if (effectiveTool === 'pointer') {
       // Check all boxes from top to bottom for interaction
@@ -935,8 +1057,7 @@ export default function AnnotationCanvas() {
           setSelectedBox(i); // Select the box
           setIsDraggingBox(true);
           setDragStart(pos, { ...box });
-          // Auto-switch to box tool after clicking on a box
-          useAnnotatorStore.getState().setCurrentTool('box');
+          // Stay in pointer mode to allow manipulation
           return;
         }
       }
@@ -1070,6 +1191,15 @@ export default function AnnotationCanvas() {
       return;
     }
 
+    // Brush size drag adjustment
+    if (isBrushBoxMode && brushSizeDragStart !== null) {
+      const deltaX = e.clientX - brushSizeDragStart;
+      // 1px drag = 1px brush size change
+      const newSize = brushSizeStartValue + deltaX;
+      setBrushBoxSize(newSize);
+      return;
+    }
+
     // Brush box mode - continue drawing stroke
     if (isBrushBoxMode && isDrawing) {
       setCurrentStroke((prev) => {
@@ -1124,6 +1254,35 @@ export default function AnnotationCanvas() {
       // For subsequent baselines, update position during drag
       else if (angledBaselines.length > 0 && tempAngledBaselinePos !== null) {
         setTempAngledBaselinePos(pos);
+      }
+      return;
+    }
+
+    // Zoom mode - drag to change zoom level
+    if (isZoomMode && zoomDragStart) {
+      // Horizontal drag changes zoom: right = zoom in, left = zoom out
+      const deltaX = e.clientX - zoomDragStart.clientX;
+      // Scale factor: 200px drag = double/half zoom
+      const zoomFactor = Math.pow(2, deltaX / 200);
+
+      // Calculate min zoom similar to wheel
+      let minZoom = 0.1;
+      if (containerRef.current && image) {
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const containerHeight = containerRect.height;
+        minZoom = (containerHeight * 0.5) / image.height;
+      }
+
+      const newZoom = Math.max(minZoom, Math.min(4.0, zoomStartLevel * zoomFactor));
+
+      // Zoom toward the original cursor position (same as wheel zoom)
+      if (newZoom !== zoomLevel) {
+        const scaleDifference = newZoom - zoomStartLevel;
+        const newPanX = zoomDragStart.panX - zoomDragStart.imageX * scaleDifference;
+        const newPanY = zoomDragStart.panY - zoomDragStart.imageY * scaleDifference;
+
+        setZoomLevel(newZoom);
+        setPanOffset({ x: newPanX, y: newPanY });
       }
       return;
     }
@@ -1218,6 +1377,12 @@ export default function AnnotationCanvas() {
       return;
     }
 
+    // Brush size drag end
+    if (isBrushBoxMode && brushSizeDragStart !== null) {
+      clearBrushSizeDrag();
+      return;
+    }
+
     // Brush box mode - finish stroke
     if (isBrushBoxMode && isDrawing && currentStroke.length > 1) {
       addBrushStroke({ points: [...currentStroke], size: brushBoxSize });
@@ -1241,6 +1406,12 @@ export default function AnnotationCanvas() {
     // Baseline mode - add baseline at current position
     if (isBaselineMode && tempBaselineY !== null) {
       addBaseline(tempBaselineY);
+      return;
+    }
+
+    // Zoom mode - end drag
+    if (isZoomMode && zoomDragStart) {
+      clearZoomDrag();
       return;
     }
 
@@ -1475,94 +1646,138 @@ export default function AnnotationCanvas() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [zoomIn, zoomOut, resetZoom, isBrushBoxMode, brushBoxSize, setBrushBoxSize]);
 
-  // Mouse wheel zoom
-  const handleWheel = (e) => {
+  // Mouse wheel zoom (pinch) and pan (scroll)
+  const handleWheel = useCallback((e) => {
     e.preventDefault();
 
-    // Calculate minimum zoom to allow 50% of viewport height
-    let minZoom = 0.1;
-    if (containerRef.current && image) {
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const containerHeight = containerRect.height;
+    // Detect if this is likely a mouse wheel vs trackpad
+    // Key differences:
+    // - Mouse wheels: deltaMode 1 (line), or deltaMode 0 with discrete integer steps, no deltaX
+    // - Trackpads: deltaMode 0 with smooth/fractional deltas, often have deltaX
+    // - Trackpad pinch: sends ctrlKey = true
 
-      // Min zoom is 50% of viewport height
-      minZoom = (containerHeight * 0.5) / image.height;
-    }
+    // Trackpad pinch gestures send wheel events with ctrlKey set to true
+    const isPinchZoom = e.ctrlKey;
 
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    const newZoom = Math.max(minZoom, Math.min(4.0, zoomLevel + delta));
+    // Mouse wheels use deltaMode 1 (DOM_DELTA_LINE)
+    const isLineMode = e.deltaMode === 1;
 
-    // Zoom toward cursor position (react-zoom-pan-pinch approach)
-    if (canvasRef.current && newZoom !== zoomLevel) {
-      const canvas = canvasRef.current;
-      const rect = canvas.getBoundingClientRect();
+    // In pixel mode (deltaMode 0), mouse wheels have:
+    // - No horizontal movement (deltaX === 0)
+    // - Integer deltaY values (trackpads often have fractional)
+    const isDiscreteScroll = e.deltaMode === 0 &&
+      e.deltaX === 0 &&
+      Number.isInteger(e.deltaY);
 
-      // Get mouse position relative to canvas in image coordinates
-      // getBoundingClientRect() returns the transformed position (includes scale and translate)
-      const mouseX = (e.clientX - rect.left) / zoomLevel;
-      const mouseY = (e.clientY - rect.top) / zoomLevel;
+    const isMouseWheel = isLineMode || isDiscreteScroll;
 
-      // Calculate new position using react-zoom-pan-pinch formula:
-      // newPosition = currentPosition - mousePosition * (newScale - currentScale)
-      const scaleDifference = newZoom - zoomLevel;
-      const newPanX = panOffset.x - mouseX * scaleDifference;
-      const newPanY = panOffset.y - mouseY * scaleDifference;
+    // Mouse wheel should always zoom, trackpad pinch should zoom, trackpad scroll should pan
+    const shouldZoom = isPinchZoom || isMouseWheel;
 
-      useAnnotatorStore.getState().setZoomLevel(newZoom);
-      setPanOffset({ x: newPanX, y: newPanY });
+    if (shouldZoom) {
+      // Zoom behavior
+      // Calculate minimum zoom to allow 50% of viewport height
+      let minZoom = 0.1;
+      if (containerRef.current && image) {
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const containerHeight = containerRect.height;
+
+        // Min zoom is 50% of viewport height
+        minZoom = (containerHeight * 0.5) / image.height;
+      }
+
+      // Use smaller delta for smoother zoom
+      // Mouse wheel needs smaller multiplier since deltaY is larger
+      // Pinch zoom needs higher multiplier for responsiveness
+      const multiplier = isMouseWheel ? 0.002 : 0.025;
+      const delta = -e.deltaY * multiplier;
+      const newZoom = Math.max(minZoom, Math.min(4.0, zoomLevel + delta));
+
+      // Zoom toward cursor position (react-zoom-pan-pinch approach)
+      if (canvasRef.current && newZoom !== zoomLevel) {
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+
+        // Get mouse position relative to canvas in image coordinates
+        const mouseX = (e.clientX - rect.left) / zoomLevel;
+        const mouseY = (e.clientY - rect.top) / zoomLevel;
+
+        // Calculate new position using react-zoom-pan-pinch formula
+        const scaleDifference = newZoom - zoomLevel;
+        const newPanX = panOffset.x - mouseX * scaleDifference;
+        const newPanY = panOffset.y - mouseY * scaleDifference;
+
+        useAnnotatorStore.getState().setZoomLevel(newZoom);
+        setPanOffset({ x: newPanX, y: newPanY });
+      } else {
+        useAnnotatorStore.getState().setZoomLevel(newZoom);
+      }
     } else {
-      useAnnotatorStore.getState().setZoomLevel(newZoom);
+      // Trackpad two-finger scroll to pan
+      const panMultiplier = 1.5;
+      const newPanX = panOffset.x - e.deltaX * panMultiplier;
+      const newPanY = panOffset.y - e.deltaY * panMultiplier;
+      setPanOffset({ x: newPanX, y: newPanY });
     }
-  };
+  }, [zoomLevel, panOffset, image]);
+
+  // Attach wheel event listener to container (not canvas) so it works in white space
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [handleWheel]);
 
   if (!image) return null;
 
   return (
     <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
       <ToolPalette />
-      <ZoomControls />
+      <RightModePanel />
 
       <div
         ref={containerRef}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={(e) => {
+          // Clear temporary baseline if user leaves container while drawing
+          if (isBaselineMode && tempBaselineY !== null) {
+            setTempBaselineY(null);
+          }
+
+          // Clear temporary angled baseline if user leaves container while drawing
+          if (isAngledBaselineMode) {
+            setAngledBaselineLineStart(null);
+            setAngledBaselineLineEnd(null);
+            setTempAngledBaselinePos(null);
+          }
+
+          handleMouseUp(e);
+          setHoveredBox(null);
+          setHoverCorner(null);
+          setCursorStyle('crosshair');
+        }}
         style={{
           position: 'relative',
           width: '100%',
           height: '100%',
           overflow: 'hidden',
           borderRadius: '8px',
-          background: 'white'
+          background: 'white',
+          cursor: cursorStyle
         }}
       >
         <canvas
           ref={canvasRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={(e) => {
-            // Clear temporary baseline if user leaves canvas while drawing
-            if (isBaselineMode && tempBaselineY !== null) {
-              setTempBaselineY(null);
-            }
-
-            // Clear temporary angled baseline if user leaves canvas while drawing
-            if (isAngledBaselineMode) {
-              setAngledBaselineLineStart(null);
-              setAngledBaselineLineEnd(null);
-              setTempAngledBaselinePos(null);
-            }
-
-            handleMouseUp(e);
-            setHoveredBox(null);
-            setHoverCorner(null);
-            setCursorStyle('crosshair');
-          }}
           onClick={handleCanvasClick}
-          onWheel={handleWheel}
           style={{
             position: 'absolute',
-            border: '2px solid #ddd',
             borderRadius: '8px',
-            cursor: cursorStyle,
             transformOrigin: '0 0',
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`
           }}

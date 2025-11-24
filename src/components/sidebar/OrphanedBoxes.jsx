@@ -1,8 +1,9 @@
-import { useRef, useEffect } from 'react';
-import { Trash2, Plus } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Trash2, Plus, X, Archive } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 
 export default function OrphanedBoxes() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const boxes = useAnnotatorStore((state) => state.boxes);
   const image = useAnnotatorStore((state) => state.image);
   const imageRotation = useAnnotatorStore((state) => state.imageRotation);
@@ -24,20 +25,6 @@ export default function OrphanedBoxes() {
     }
   });
 
-  const panelStyle = {
-    background: 'white',
-    padding: '10px',
-    borderRadius: '12px',
-    border: '2px solid #ddd',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  };
-
-  const titleStyle = {
-    fontWeight: 600,
-    marginBottom: '8px',
-    color: '#333',
-    fontSize: '13px'
-  };
 
   // Render each character to its own canvas
   const renderCharacter = (canvasRef, box) => {
@@ -49,15 +36,12 @@ export default function OrphanedBoxes() {
     const boxWidth = box.width + charPadding * 2;
     const boxHeight = box.height + charPadding * 2;
 
-    // Set canvas size to match box dimensions
     canvas.width = boxWidth;
     canvas.height = boxHeight;
 
-    // Fill with white background
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, boxWidth, boxHeight);
 
-    // Use rotated image if needed
     let sourceImage = image;
     if (imageRotation !== 0) {
       const tempCanvas = document.createElement('canvas');
@@ -73,9 +57,7 @@ export default function OrphanedBoxes() {
       sourceImage = tempCanvas;
     }
 
-    // Apply brush mask if it exists
     if (box.brushMask && box.brushMask.length > 0) {
-      // Create mask using offscreen canvas
       const maskCanvas = document.createElement('canvas');
       maskCanvas.width = boxWidth;
       maskCanvas.height = boxHeight;
@@ -138,7 +120,6 @@ export default function OrphanedBoxes() {
   };
 
   const handleAddToString = (char) => {
-    // Add the character to the end of the string
     setText(text + char);
   };
 
@@ -148,35 +129,101 @@ export default function OrphanedBoxes() {
     }
   };
 
-  return (
-    <div style={panelStyle}>
-      <h3 style={titleStyle}>Orphaned Boxes ({orphanedBoxes.length})</h3>
+  if (orphanedBoxes.length === 0) {
+    return null;
+  }
 
-      {orphanedBoxes.length === 0 ? (
+  return (
+    <>
+      <div className="te-panel">
         <div style={{
-          textAlign: 'center',
-          color: '#999',
-          fontSize: '11px',
-          fontStyle: 'italic',
-          padding: '4px 0'
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
         }}>
-          All boxes are in use
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <Archive style={{ width: '14px', height: '14px', color: 'var(--te-black)' }} />
+            <span className="te-small-caps">
+              <strong>{orphanedBoxes.length}</strong> orphaned box{orphanedBoxes.length !== 1 ? 'es' : ''}
+            </span>
+          </div>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="te-btn te-btn-secondary"
+            style={{ height: '28px', fontSize: '10px' }}
+          >
+            View
+          </button>
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {orphanedBoxes.map((item) => (
-            <OrphanedBoxThumbnail
-              key={item.index}
-              item={item}
-              renderCharacter={renderCharacter}
-              image={image}
-              onAddToString={handleAddToString}
-              onDelete={handleDeleteBox}
-            />
-          ))}
+      </div>
+
+      {/* Modal */}
+      {isModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: 'var(--te-white)',
+            borderRadius: 'var(--radius-md)',
+            padding: '16px',
+            maxWidth: '500px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            border: '1px solid var(--te-gray-mid)',
+            boxShadow: 'var(--shadow-inner)'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '12px'
+            }}>
+              <span className="te-panel-title" style={{ margin: 0, fontSize: '11px' }}>
+                Orphaned Boxes ({orphanedBoxes.length})
+              </span>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  color: 'var(--te-black)'
+                }}
+              >
+                <X style={{ width: '16px', height: '16px' }} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {orphanedBoxes.map((item) => (
+                <OrphanedBoxThumbnail
+                  key={item.index}
+                  item={item}
+                  renderCharacter={renderCharacter}
+                  image={image}
+                  onAddToString={handleAddToString}
+                  onDelete={handleDeleteBox}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -195,19 +242,20 @@ function OrphanedBoxThumbnail({ item, renderCharacter, image, onAddToString, onD
       display: 'flex',
       alignItems: 'center',
       gap: '8px',
-      padding: '6px',
-      border: '1px solid #ddd',
-      borderRadius: '6px',
-      background: '#f9f9f9'
+      padding: '8px',
+      border: '1px solid var(--te-gray-mid)',
+      borderRadius: 'var(--radius-sm)',
+      background: 'var(--te-gray-light)',
+      boxShadow: 'var(--shadow-inner)'
     }}>
       <div style={{
-        width: '40px',
-        height: '40px',
-        border: '2px solid #999',
-        borderRadius: '4px',
+        width: '32px',
+        height: '32px',
+        border: '1px solid var(--te-gray-mid)',
+        borderRadius: 'var(--radius-sm)',
         overflow: 'hidden',
         position: 'relative',
-        background: 'white',
+        background: 'var(--te-white)',
         flexShrink: 0
       }}>
         <canvas
@@ -223,9 +271,9 @@ function OrphanedBoxThumbnail({ item, renderCharacter, image, onAddToString, onD
 
       <div style={{
         flex: 1,
-        fontSize: '13px',
-        fontWeight: 600,
-        color: '#333'
+        fontSize: '14px',
+        fontVariationSettings: "'wght' 500",
+        color: 'var(--te-black)'
       }}>
         "{item.char}"
       </div>
@@ -233,18 +281,14 @@ function OrphanedBoxThumbnail({ item, renderCharacter, image, onAddToString, onD
       <button
         onClick={() => onAddToString(item.char)}
         title={`Add "${item.char}" back to string`}
+        className="te-btn"
         style={{
-          padding: '4px 8px',
-          fontSize: '11px',
-          background: '#4CAF50',
-          color: 'white',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          fontWeight: 600
+          height: '28px',
+          fontSize: '10px',
+          background: 'var(--te-green)',
+          borderColor: 'var(--te-green)',
+          color: 'var(--te-black)',
+          gap: '4px'
         }}
       >
         <Plus style={{ width: '12px', height: '12px' }} />
@@ -254,18 +298,8 @@ function OrphanedBoxThumbnail({ item, renderCharacter, image, onAddToString, onD
       <button
         onClick={() => onDelete(item.index)}
         title={`Permanently delete box for "${item.char}"`}
-        style={{
-          padding: '4px 8px',
-          fontSize: '11px',
-          background: '#f44336',
-          color: 'white',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px'
-        }}
+        className="te-btn te-btn-danger te-btn-icon"
+        style={{ height: '28px', width: '28px' }}
       >
         <Trash2 style={{ width: '12px', height: '12px' }} />
       </button>

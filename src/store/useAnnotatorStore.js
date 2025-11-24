@@ -43,8 +43,13 @@ const useAnnotatorStore = create((set, get) => {
   isPanning: false,
 
   // Tool state
-  currentTool: 'pointer', // 'pointer', 'box', 'brush', 'rotate', 'baseline', 'autosolve'
+  currentTool: 'pointer', // 'pointer', 'box', 'brush', 'rotate', 'baseline', 'autosolve', 'zoom'
   selectedBox: null,
+
+  // Zoom tool state
+  isZoomMode: false,
+  zoomDragStart: null,
+  zoomStartLevel: 1.0,
 
   // Auto-solve state
   isSelectingAutoSolveRegion: false,
@@ -56,6 +61,8 @@ const useAnnotatorStore = create((set, get) => {
   isBrushBoxMode: false,
   brushBoxSize: 40,
   brushStrokes: [], // Array of stroke paths
+  brushSizeDragStart: null, // For shift+drag brush size adjustment
+  brushSizeStartValue: 40,
 
   // Rotation state
   imageRotation: 0, // Rotation angle in degrees
@@ -113,6 +120,7 @@ const useAnnotatorStore = create((set, get) => {
   kerningAdjustments: {},
   letterSpacing: 0,
   charPadding: 0,
+  placeholderOpacity: 1.0, // 1.0 for preview, 0.1 for export
 
   // Actions
   setIsAnnotating: (value) => set({ isAnnotating: value }),
@@ -124,14 +132,32 @@ const useAnnotatorStore = create((set, get) => {
     saveText(text); // Save to localStorage
     // DON'T clear boxes - keep all boxes for persistence
     // Boxes will be filtered by rendering logic to show only active ones
-    set({ text, uniqueChars, currentCharIndex: 0 });
+    // Remap charIndex for all boxes based on their char property
+    set((state) => ({
+      text,
+      uniqueChars,
+      currentCharIndex: 0,
+      boxes: state.boxes.map(box => ({
+        ...box,
+        charIndex: uniqueChars.indexOf(box.char)
+      }))
+    }));
   },
 
   // Update text without clearing boxes or other state
   updateTextOnly: (text) => {
     const uniqueChars = [...new Set(text.split(''))];
     saveText(text); // Save to localStorage
-    set({ text, uniqueChars, currentCharIndex: 0 });
+    // Remap charIndex for all boxes based on their char property
+    set((state) => ({
+      text,
+      uniqueChars,
+      currentCharIndex: 0,
+      boxes: state.boxes.map(box => ({
+        ...box,
+        charIndex: uniqueChars.indexOf(box.char)
+      }))
+    }));
   },
 
   addBox: (box) => set((state) => {
@@ -295,6 +321,15 @@ const useAnnotatorStore = create((set, get) => {
   }),
 
   setBrushBoxSize: (size) => set({ brushBoxSize: Math.max(10, Math.min(400, size)) }),
+
+  setBrushSizeDragStart: (x, currentSize) => set({
+    brushSizeDragStart: x,
+    brushSizeStartValue: currentSize,
+  }),
+
+  clearBrushSizeDrag: () => set({
+    brushSizeDragStart: null,
+  }),
 
   addBrushStroke: (stroke) => set((state) => ({
     brushStrokes: [...state.brushStrokes, stroke],
@@ -475,6 +510,35 @@ const useAnnotatorStore = create((set, get) => {
     rotationLineEnd: null,
   }),
 
+  // Zoom tool actions
+  startZoomMode: () => set({
+    isZoomMode: true,
+    zoomDragStart: null,
+    currentTool: 'zoom',
+    selectedBox: null,
+    // Deactivate other modes
+    isSelectingAutoSolveRegion: false,
+    isBrushBoxMode: false,
+    isRotationMode: false,
+    isBaselineMode: false,
+    isAngledBaselineMode: false,
+  }),
+
+  cancelZoom: () => set({
+    isZoomMode: false,
+    zoomDragStart: null,
+    currentTool: 'pointer',
+  }),
+
+  setZoomDragStart: (pos, level) => set({
+    zoomDragStart: pos,
+    zoomStartLevel: level,
+  }),
+
+  clearZoomDrag: () => set({
+    zoomDragStart: null,
+  }),
+
   // Baseline actions
   startBaselineMode: () => set({
     isBaselineMode: true,
@@ -491,12 +555,15 @@ const useAnnotatorStore = create((set, get) => {
   setTempBaselineY: (y) => set({ tempBaselineY: y }),
 
   addBaseline: (y) => {
+    // Design system colors for baselines
+    const baselineColors = ['#FF6B00', '#00B4D8', '#4ADE80', '#FFD60A', '#EF4444'];
+
     // First, add the baseline to state
     set((state) => ({
       baselines: [...state.baselines, {
         id: state.baselineIdCounter,
         y: y,
-        color: ['#FF5252', '#2196F3', '#4CAF50', '#FF9800', '#9C27B0', '#00BCD4'][state.baselines.length % 6],
+        color: baselineColors[state.baselines.length % baselineColors.length],
       }],
       baselineIdCounter: state.baselineIdCounter + 1,
       tempBaselineY: null,
@@ -554,6 +621,9 @@ const useAnnotatorStore = create((set, get) => {
   setTempAngledBaselinePos: (pos) => set({ tempAngledBaselinePos: pos }),
 
   addAngledBaseline: (start, end, angle) => {
+    // Design system colors for baselines
+    const baselineColors = ['#FF6B00', '#00B4D8', '#4ADE80', '#FFD60A', '#EF4444'];
+
     // First, add the angled baseline to state
     set((state) => ({
       angledBaselines: [...state.angledBaselines, {
@@ -561,7 +631,7 @@ const useAnnotatorStore = create((set, get) => {
         start: start,
         end: end,
         angle: angle,
-        color: ['#FF5252', '#2196F3', '#4CAF50', '#FF9800', '#9C27B0', '#00BCD4'][state.angledBaselines.length % 6],
+        color: baselineColors[state.angledBaselines.length % baselineColors.length],
       }],
       angledBaselineIdCounter: state.angledBaselineIdCounter + 1,
       angledBaselineLineStart: null,
@@ -695,6 +765,7 @@ const useAnnotatorStore = create((set, get) => {
   setLetterSpacing: (value) => set({ letterSpacing: value }),
 
   setCharPadding: (value) => set({ charPadding: value }),
+  setPlaceholderOpacity: (value) => set({ placeholderOpacity: value }),
 
   setBoxes: (boxes) => set({ boxes }),
 

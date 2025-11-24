@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Save, Trash2 } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
+import SplineSlider from '../ui/SplineSlider';
 
 export default function CharacterEditModal() {
   const canvasRef = useRef(null);
@@ -733,23 +734,20 @@ export default function CharacterEditModal() {
           background: '#f9fafb'
         }}>
           <div style={{ flex: 1 }}>
-            <label style={{
-              fontSize: '14px',
-              fontWeight: 600,
-              color: '#4a5568',
+            <label className="te-control-label" style={{
               display: 'block',
-              marginBottom: '4px'
+              marginBottom: '8px'
             }}>
-              Brush Size: {editBrushSize}px
+              Brush Size
             </label>
-            <input
-              type="range"
-              min="5"
-              max="100"
-              step="5"
+            <SplineSlider
               value={editBrushSize}
-              onChange={(e) => setEditBrushSize(parseInt(e.target.value))}
-              style={{ width: '100%', height: '8px' }}
+              onChange={setEditBrushSize}
+              min={5}
+              max={100}
+              step={5}
+              showInput={true}
+              inputWidth="40px"
             />
           </div>
 

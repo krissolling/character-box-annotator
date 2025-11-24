@@ -1,12 +1,9 @@
-import { useRef, useEffect } from 'react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
+import { Pencil } from 'lucide-react';
 
 export default function EditedCharacters() {
   const editedCharData = useAnnotatorStore((state) => state.editedCharData);
   const boxes = useAnnotatorStore((state) => state.boxes);
-  const image = useAnnotatorStore((state) => state.image);
-  const imageRotation = useAnnotatorStore((state) => state.imageRotation);
-  const charPadding = useAnnotatorStore((state) => state.charPadding);
   const openCharacterEdit = useAnnotatorStore((state) => state.openCharacterEdit);
 
   // Collect all edited boxes (both manually edited and brush-drawn)
@@ -24,247 +21,44 @@ export default function EditedCharacters() {
     }
   });
 
-  const panelStyle = {
-    background: 'white',
-    padding: '10px',
-    borderRadius: '12px',
-    border: '2px solid #ddd',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  };
-
-  const titleStyle = {
-    fontWeight: 600,
-    marginBottom: '8px',
-    color: '#333',
-    fontSize: '13px'
-  };
-
-  // Render each character to its own canvas
-  const renderCharacter = (canvasRef, box, index) => {
-    if (!canvasRef || !image) return;
-
-    const canvas = canvasRef;
-    const ctx = canvas.getContext('2d');
-
-    const boxWidth = box.width + charPadding * 2;
-    const boxHeight = box.height + charPadding * 2;
-
-    // Set canvas size to match box dimensions
-    canvas.width = boxWidth;
-    canvas.height = boxHeight;
-
-    // Fill with white background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, boxWidth, boxHeight);
-
-    // Use rotated image if needed
-    let sourceImage = image;
-    if (imageRotation !== 0) {
-      const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCanvas.width = image.width;
-      tempCanvas.height = image.height;
-      const centerX = image.width / 2;
-      const centerY = image.height / 2;
-      tempCtx.translate(centerX, centerY);
-      tempCtx.rotate(imageRotation * Math.PI / 180);
-      tempCtx.translate(-centerX, -centerY);
-      tempCtx.drawImage(image, 0, 0);
-      sourceImage = tempCanvas;
-    }
-
-    // Apply brush mask if it exists
-    if (box.brushMask && box.brushMask.length > 0) {
-      // Create mask using offscreen canvas to properly handle stroke width
-      const maskCanvas = document.createElement('canvas');
-      maskCanvas.width = boxWidth;
-      maskCanvas.height = boxHeight;
-      const maskCtx = maskCanvas.getContext('2d');
-
-      // Build a combined path from all brush strokes
-      maskCtx.fillStyle = 'black';
-      maskCtx.strokeStyle = 'black';
-
-      // First, stroke each path with proper width to create the outline
-      box.brushMask.forEach(stroke => {
-        maskCtx.lineWidth = stroke.size;
-        maskCtx.lineCap = 'round';
-        maskCtx.lineJoin = 'round';
-
-        maskCtx.beginPath();
-        stroke.points.forEach((point, i) => {
-          const boxRelativeX = point.x - box.x;
-          const boxRelativeY = point.y - box.y;
-          const x = charPadding + boxRelativeX;
-          const y = charPadding + boxRelativeY;
-          if (i === 0) {
-            maskCtx.moveTo(x, y);
-          } else {
-            maskCtx.lineTo(x, y);
-          }
-        });
-        maskCtx.stroke();
-
-        // Add circles at each point for full coverage
-        stroke.points.forEach(point => {
-          const boxRelativeX = point.x - box.x;
-          const boxRelativeY = point.y - box.y;
-          const x = charPadding + boxRelativeX;
-          const y = charPadding + boxRelativeY;
-          maskCtx.beginPath();
-          maskCtx.arc(x, y, stroke.size / 2, 0, Math.PI * 2);
-          maskCtx.fill();
-        });
-      });
-
-      // Now create a unified path from all strokes and fill the interior
-      maskCtx.beginPath();
-      box.brushMask.forEach(stroke => {
-        if (stroke.points.length > 0) {
-          const firstPoint = stroke.points[0];
-          const boxRelativeX = firstPoint.x - box.x;
-          const boxRelativeY = firstPoint.y - box.y;
-          maskCtx.moveTo(charPadding + boxRelativeX, charPadding + boxRelativeY);
-
-          stroke.points.slice(1).forEach(point => {
-            const boxRelativeX = point.x - box.x;
-            const boxRelativeY = point.y - box.y;
-            maskCtx.lineTo(charPadding + boxRelativeX, charPadding + boxRelativeY);
-          });
-        }
-      });
-      // Close the path and fill interior using nonzero winding rule
-      maskCtx.closePath();
-      maskCtx.fill('nonzero');
-
-      // Use temp canvas to combine image with mask
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = boxWidth;
-      tempCanvas.height = boxHeight;
-      const tempCtx = tempCanvas.getContext('2d');
-
-      // Draw the character to temp canvas
-      tempCtx.drawImage(
-        sourceImage,
-        box.x, box.y, box.width, box.height,
-        charPadding, charPadding, box.width, box.height
-      );
-
-      // Apply mask using destination-in
-      tempCtx.globalCompositeOperation = 'destination-in';
-      tempCtx.drawImage(maskCanvas, 0, 0);
-
-      // Draw the masked result to main canvas
-      ctx.drawImage(tempCanvas, 0, 0);
-    } else {
-      // No brush mask - draw the original image normally
-      ctx.drawImage(
-        sourceImage,
-        box.x, box.y, box.width, box.height,
-        charPadding, charPadding, box.width, box.height
-      );
-    }
-
-    // Apply erase mask if it exists
-    const editData = editedCharData[index];
-    const eraseMask = editData && typeof editData !== 'string' ? editData.eraseMask : null;
-
-    if (eraseMask && eraseMask.length > 0) {
-      eraseMask.forEach(stroke => {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = 'rgba(0,0,0,1)';
-        stroke.points.forEach(point => {
-          // Convert from absolute image coordinates to box-relative coordinates
-          const boxRelativeX = point.x - box.x;
-          const boxRelativeY = point.y - box.y;
-          const x = charPadding + boxRelativeX;
-          const y = charPadding + boxRelativeY;
-          ctx.beginPath();
-          ctx.arc(x, y, stroke.size / 2, 0, Math.PI * 2);
-          ctx.fill();
-        });
-        ctx.globalCompositeOperation = 'source-over';
-      });
-    }
-  };
+  if (editedBoxes.length === 0) {
+    return null;
+  }
 
   return (
-    <div style={panelStyle}>
-      <h3 style={titleStyle}>Edited Characters</h3>
-
-      {editedBoxes.length === 0 ? (
-        <div style={{
-          textAlign: 'center',
-          color: '#999',
-          fontSize: '11px',
-          fontStyle: 'italic',
-          padding: '4px 0'
-        }}>
-          No edited characters yet
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          {editedBoxes.map((item) => (
-            <CharacterThumbnail
-              key={item.index}
-              item={item}
-              renderCharacter={renderCharacter}
-              image={image}
-              openCharacterEdit={openCharacterEdit}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Separate component for each character thumbnail
-function CharacterThumbnail({ item, renderCharacter, image, openCharacterEdit }) {
-  const canvasRef = useRef(null);
-
-  useEffect(() => {
-    if (canvasRef.current && image) {
-      renderCharacter(canvasRef.current, item.box, item.index);
-    }
-  }, [item, image, renderCharacter]);
-
-  return (
-    <div
-      onClick={() => openCharacterEdit(item.index)}
-      style={{
-        width: '50px',
-        height: '50px',
-        border: '2px solid #2196F3',
-        borderRadius: '6px',
-        overflow: 'hidden',
-        position: 'relative',
-        background: 'white',
-        cursor: 'pointer'
-      }}
-      title={`Edit character "${item.char}"`}
-    >
-      <canvas
-        ref={canvasRef}
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'contain',
-          display: 'block'
-        }}
-      />
+    <div className="te-panel">
       <div style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        background: 'rgba(33, 150, 243, 0.9)',
-        color: 'white',
-        fontSize: '10px',
-        textAlign: 'center',
-        padding: '2px'
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        marginBottom: '6px'
       }}>
-        {item.char}
+        <Pencil style={{ width: '14px', height: '14px', color: 'var(--te-black)' }} />
+        <span className="te-small-caps">
+          <strong>{editedBoxes.length}</strong> edited character{editedBoxes.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '4px'
+      }}>
+        {editedBoxes.map((item) => (
+          <button
+            key={item.index}
+            onClick={() => openCharacterEdit(item.index)}
+            className="te-tag te-tag-blue"
+            style={{
+              cursor: 'pointer',
+              border: 'none',
+              fontVariationSettings: "'wght' 500"
+            }}
+            title={`Edit character "${item.char}"`}
+          >
+            {item.char}
+          </button>
+        ))}
       </div>
     </div>
   );

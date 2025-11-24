@@ -1,4 +1,6 @@
-import Tesseract from 'tesseract.js';
+// Use Tesseract from CDN (loaded in index.html) for proper symbol-level data
+// The npm package doesn't return symbols, but the CDN version does
+const Tesseract = window.Tesseract;
 
 const MIN_CONFIDENCE = 60; // Minimum OCR confidence threshold
 const PADDING = 5; // Padding around detected characters
@@ -10,16 +12,17 @@ const PADDING = 5; // Padding around detected characters
  * @param {Array} boxes - Existing boxes
  * @param {Array} uniqueChars - Unique characters from the target string
  * @param {string} text - The target text string
+ * @param {number} imageRotation - Rotation angle in degrees (default 0)
  * @returns {Promise<{addedBoxes: Array, skippedCount: number}>}
  */
-export async function processAutoSolveRegions(image, regions, boxes, uniqueChars, text) {
+export async function processAutoSolveRegions(image, regions, boxes, uniqueChars, text, imageRotation = 0) {
   if (regions.length === 0) {
     throw new Error('No regions to process');
   }
 
   console.log(`📦 Processing ${regions.length} region(s)`);
 
-  // Create Tesseract worker
+  // Create Tesseract worker (using CDN global)
   console.log('📦 Creating Tesseract worker...');
   const worker = await Tesseract.createWorker('eng', 1, {
     logger: (m) => console.log('Tesseract:', m),
@@ -31,6 +34,25 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
     charToBox[box.char] = box;
   });
 
+  // Create full canvas with rotation applied (like working implementation)
+  const fullCanvas = document.createElement('canvas');
+  fullCanvas.width = image.width;
+  fullCanvas.height = image.height;
+  const fullCtx = fullCanvas.getContext('2d');
+
+  // Apply rotation if there is any
+  if (imageRotation !== 0) {
+    fullCtx.save();
+    fullCtx.translate(fullCanvas.width / 2, fullCanvas.height / 2);
+    fullCtx.rotate(imageRotation * Math.PI / 180);
+    fullCtx.translate(-fullCanvas.width / 2, -fullCanvas.height / 2);
+    fullCtx.drawImage(image, 0, 0, fullCanvas.width, fullCanvas.height);
+    fullCtx.restore();
+    console.log(`🔄 Applied ${imageRotation}° rotation to image for OCR`);
+  } else {
+    fullCtx.drawImage(image, 0, 0);
+  }
+
   // Process all regions
   const allMatches = {};
 
@@ -38,15 +60,15 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
     const region = regions[regionIndex];
     console.log(`\n📦 Processing region ${regionIndex + 1}/${regions.length}`);
 
-    // Crop to selected region
+    // Crop to selected region from the rotated full canvas
     const cropCanvas = document.createElement('canvas');
     cropCanvas.width = region.width;
     cropCanvas.height = region.height;
     const cropCtx = cropCanvas.getContext('2d');
 
-    // Draw the region from the image
+    // Copy the selected region from full canvas (which has rotation applied)
     cropCtx.drawImage(
-      image,
+      fullCanvas,
       region.x, region.y, region.width, region.height,
       0, 0, region.width, region.height
     );
@@ -55,13 +77,48 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
 
     const imageData = cropCanvas.toDataURL('image/png');
 
-    // Run OCR
+    // Run OCR (v6 requires explicit blocks output to get symbols)
     console.log('🔍 Running OCR on region...');
-    const result = await worker.recognize(imageData);
+    const result = await worker.recognize(imageData, {}, { blocks: true });
 
-    // Extract symbols
-    const symbols = result.data.symbols || [];
+    // Debug: Check what Tesseract actually recognized
+    console.log('📋 OCR Result text:', result.data.text);
+    console.log('📋 OCR Result confidence:', result.data.confidence);
+    console.log('📋 OCR Result keys:', Object.keys(result.data));
+
+    // Extract symbols from blocks structure (v6 requires manual extraction)
+    // Structure: blocks -> paragraphs -> lines -> words -> symbols
+    let symbols = [];
+
+    if (result.data.blocks && Array.isArray(result.data.blocks)) {
+      result.data.blocks.forEach(block => {
+        if (block.paragraphs) {
+          block.paragraphs.forEach(paragraph => {
+            if (paragraph.lines) {
+              paragraph.lines.forEach(line => {
+                if (line.words) {
+                  line.words.forEach(word => {
+                    if (word.symbols) {
+                      symbols = symbols.concat(word.symbols);
+                    }
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
+    }
+
     console.log(`✅ Found ${symbols.length} symbols in region`);
+
+    // Debug: show symbol details including confidence
+    if (symbols.length > 0) {
+      console.log('📝 Symbol details:');
+      symbols.forEach((s, i) => {
+        console.log(`   ${i + 1}. '${s.text}' - confidence: ${s.confidence} - bbox: (${s.bbox.x0}, ${s.bbox.y0}) to (${s.bbox.x1}, ${s.bbox.y1})`);
+      });
+    }
 
     // Match symbols to our string
     const matches = matchSymbolsToString(symbols, uniqueChars, text);
@@ -86,10 +143,13 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
   // Create bounding boxes from best matches
   const addedBoxes = [];
   let skippedCount = 0;
+  let orphanedCount = 0;
 
   for (const [char, match] of Object.entries(allMatches)) {
-    // Skip if this character already has a box
-    if (charToBox[char]) {
+    const isInTargetString = uniqueChars.includes(char);
+
+    // Skip if this character already has a box (only for target characters)
+    if (isInTargetString && charToBox[char]) {
       console.log(`⏭️ Skipping '${char}' - already has a box`);
       skippedCount++;
       continue;
@@ -102,7 +162,7 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
       width: (match.symbol.bbox.x1 - match.symbol.bbox.x0) + (PADDING * 2),
       height: (match.symbol.bbox.y1 - match.symbol.bbox.y0) + (PADDING * 2),
       char: char,
-      charIndex: uniqueChars.indexOf(char),
+      charIndex: uniqueChars.indexOf(char), // -1 for orphaned boxes
     };
 
     // Ensure box doesn't exceed image bounds
@@ -114,7 +174,13 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
     }
 
     addedBoxes.push(box);
-    console.log(`✨ Added box for '${char}' at (${box.x}, ${box.y}) ${box.width}x${box.height} - Confidence: ${match.symbol.confidence.toFixed(1)}%`);
+
+    if (isInTargetString) {
+      console.log(`✨ Added box for '${char}' at (${box.x}, ${box.y}) ${box.width}x${box.height} - Confidence: ${match.symbol.confidence.toFixed(1)}%`);
+    } else {
+      orphanedCount++;
+      console.log(`👻 Added orphaned box for '${char}' at (${box.x}, ${box.y}) ${box.width}x${box.height} - Confidence: ${match.symbol.confidence.toFixed(1)}%`);
+    }
   }
 
   return { addedBoxes, skippedCount };
@@ -142,11 +208,21 @@ function matchSymbolsToString(tesseractSymbols, uniqueChars, targetString) {
 
   console.log(`📊 Filtered to ${validSymbols.length} valid symbols (confidence ≥ ${MIN_CONFIDENCE}%)`);
 
+  // Log all detected symbols for debugging
+  if (validSymbols.length > 0) {
+    console.log('📝 Detected symbols:', validSymbols.map(s => `'${s.text}' (${s.confidence.toFixed(1)}%)`).join(', '));
+  } else {
+    console.log('⚠️ No valid symbols found. Raw symbols:', tesseractSymbols.map(s => `'${s.text}' (${s.confidence?.toFixed(1) || 0}%)`).join(', '));
+  }
+
+  console.log('🎯 Looking for characters:', uniqueChars.join(', '));
+
   // Sort symbols left-to-right by x position
   const sorted = validSymbols.sort((a, b) => a.bbox.x0 - b.bbox.x0);
 
   // Build a map of characters to their best matching symbols
   const matches = {};
+  const matchedSymbols = new Set();
 
   // For each unique character in our string
   for (const targetChar of uniqueChars) {
@@ -162,9 +238,22 @@ function matchSymbolsToString(tesseractSymbols, uniqueChars, targetString) {
       );
 
       matches[targetChar] = best;
+      matchedSymbols.add(best);
       console.log(`✓ '${targetChar}' matched with confidence ${best.confidence.toFixed(1)}%`);
     } else {
       console.log(`✗ '${targetChar}' not found in region`);
+    }
+  }
+
+  // Also add symbols that weren't matched to any target character (orphaned)
+  for (const symbol of sorted) {
+    if (!matchedSymbols.has(symbol)) {
+      const char = symbol.text;
+      // Only add if we don't already have a better match for this character
+      if (!matches[char] || symbol.confidence > matches[char].confidence) {
+        matches[char] = symbol;
+        console.log(`👻 '${char}' detected but not in target string (confidence ${symbol.confidence.toFixed(1)}%)`);
+      }
     }
   }
 
