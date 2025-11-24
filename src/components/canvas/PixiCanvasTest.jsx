@@ -88,6 +88,15 @@ export default function PixiCanvasTest() {
     }
   }, [renderer.isReady, baselines, angledBaselines]);
 
+  // Sync image rotation to renderer
+  useEffect(() => {
+    if (!renderer.isReady) return;
+    const pixiRenderer = renderer.getRenderer();
+    if (pixiRenderer) {
+      pixiRenderer.setImageRotation(imageRotation);
+    }
+  }, [renderer.isReady, imageRotation]);
+
   // Sync brush strokes to overlay
   useEffect(() => {
     if (!renderer.isReady) return;
@@ -572,25 +581,8 @@ export default function PixiCanvasTest() {
         setAngledBaselineLineStart({ x: imageX, y: imageY });
         setAngledBaselineLineEnd({ x: imageX, y: imageY });
       } else {
-        // Subsequent baselines: add at cursor with locked angle
-        const lastBaseline = angledBaselines[angledBaselines.length - 1];
-        const angleRad = lastBaseline.angle * (Math.PI / 180);
-
-        // Calculate extended line in both directions
-        const extendLength = (renderer.getRenderer()?.sourceImage?.width || 10000) * 2;
-        const dirX = Math.cos(angleRad);
-        const dirY = Math.sin(angleRad);
-
-        const start = {
-          x: imageX - dirX * extendLength,
-          y: imageY - dirY * extendLength
-        };
-        const end = {
-          x: imageX + dirX * extendLength,
-          y: imageY + dirY * extendLength
-        };
-
-        addAngledBaseline(start, end, lastBaseline.angle);
+        // Subsequent baselines: store position, will add on mouseUp
+        setTempAngledBaselinePos({ x: imageX, y: imageY });
       }
       return;
     }
@@ -809,17 +801,21 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Finish line drawing (angled baseline or rotation)
+    // Finish line drawing (first angled baseline or rotation)
     if (isDrawingLine && lineStart && lineEnd) {
       const dx = lineEnd.x - lineStart.x;
       const dy = lineEnd.y - lineStart.y;
       const length = Math.sqrt(dx * dx + dy * dy);
 
       if (length > 10) { // Minimum line length
-        if (currentTool === 'angled') {
-          // Add angled baseline
+        if (currentTool === 'angled' && angledBaselines.length === 0) {
+          // First angled baseline: add with drawn angle
           const angle = Math.atan2(dy, dx) * (180 / Math.PI);
           addAngledBaseline(lineStart, lineEnd, angle);
+
+          // Clear Zustand state
+          setAngledBaselineLineStart(null);
+          setAngledBaselineLineEnd(null);
         } else if (currentTool === 'rotate') {
           // Use confirmRotation which snaps to nearest horizontal or vertical
           confirmRotation();
@@ -836,6 +832,33 @@ export default function PixiCanvasTest() {
       if (pixiRenderer) {
         pixiRenderer.setOverlayData({});
       }
+
+      return;
+    }
+
+    // Handle subsequent angled baseline mouseup (template mode)
+    if (currentTool === 'angled' && angledBaselines.length > 0 && tempAngledBaselinePos) {
+      const lastBaseline = angledBaselines[angledBaselines.length - 1];
+      const angleRad = lastBaseline.angle * (Math.PI / 180);
+
+      // Calculate extended line in both directions
+      const extendLength = (renderer.getRenderer()?.sourceImage?.width || 10000) * 2;
+      const dirX = Math.cos(angleRad);
+      const dirY = Math.sin(angleRad);
+
+      const start = {
+        x: tempAngledBaselinePos.x - dirX * extendLength,
+        y: tempAngledBaselinePos.y - dirY * extendLength
+      };
+      const end = {
+        x: tempAngledBaselinePos.x + dirX * extendLength,
+        y: tempAngledBaselinePos.y + dirY * extendLength
+      };
+
+      addAngledBaseline(start, end, lastBaseline.angle);
+
+      // Clear temp state
+      setTempAngledBaselinePos(null);
 
       return;
     }

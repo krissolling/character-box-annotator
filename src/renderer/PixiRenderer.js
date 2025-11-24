@@ -388,6 +388,31 @@ export class PixiRenderer {
   }
 
   /**
+   * Set image rotation
+   * @param {number} rotation - Rotation angle in degrees
+   */
+  setImageRotation(rotation) {
+    this.imageRotation = rotation || 0;
+
+    // Apply rotation to imageLayer
+    if (this.imageLayer) {
+      const angleRad = (this.imageRotation * Math.PI) / 180;
+      this.imageLayer.rotation = angleRad;
+
+      // Adjust position to rotate around center
+      if (this.sourceImage) {
+        const centerX = this.sourceImage.width / 2;
+        const centerY = this.sourceImage.height / 2;
+
+        this.imageLayer.pivot.set(centerX, centerY);
+        this.imageLayer.position.set(centerX, centerY);
+      }
+    }
+
+    this.requestRender();
+  }
+
+  /**
    * Set overlay data
    */
   setOverlayData(overlayData) {
