@@ -673,6 +673,31 @@ export class PixiRenderer {
 
       this.overlayLayer.addChild(graphics);
     }
+
+    // Render line being drawn (angled baseline or rotation)
+    if (overlayData.drawingLine) {
+      const { start, end, tool } = overlayData.drawingLine;
+      const graphics = new PIXI.Graphics();
+
+      graphics.moveTo(start.x, start.y);
+      graphics.lineTo(end.x, end.y);
+
+      // Different colors for different tools
+      const color = tool === 'rotate' ? 0xFF5722 : 0xFF9800; // Red for rotate, Orange for baseline
+
+      graphics.stroke({
+        width: 3 / scale,
+        color,
+        alpha: 0.8
+      });
+
+      // Draw circles at endpoints
+      graphics.circle(start.x, start.y, 8 / scale);
+      graphics.circle(end.x, end.y, 8 / scale);
+      graphics.fill({ color, alpha: 0.8 });
+
+      this.overlayLayer.addChild(graphics);
+    }
   }
 
   /**

@@ -28,6 +28,10 @@ export default function PixiCanvasTest() {
   const addBrushStroke = useAnnotatorStore(state => state.addBrushStroke);
   const baselines = useAnnotatorStore(state => state.baselines);
   const angledBaselines = useAnnotatorStore(state => state.angledBaselines);
+  const addBaseline = useAnnotatorStore(state => state.addBaseline);
+  const addAngledBaseline = useAnnotatorStore(state => state.addAngledBaseline);
+  const setImageRotation = useAnnotatorStore(state => state.setImageRotation);
+  const imageRotation = useAnnotatorStore(state => state.imageRotation);
 
   const renderer = usePixiRenderer({
     tileSize: 512,
@@ -103,6 +107,11 @@ export default function PixiCanvasTest() {
   const [currentStroke, setCurrentStroke] = useState([]);
   const [isDrawingStroke, setIsDrawingStroke] = useState(false); // Currently drawing a stroke
 
+  // Baseline/rotation state
+  const [isDrawingLine, setIsDrawingLine] = useState(false); // Drawing baseline or rotation line
+  const [lineStart, setLineStart] = useState(null);
+  const [lineEnd, setLineEnd] = useState(null);
+
   // Mouse interaction
   const handleMouseMove = (e) => {
     if (!renderer.isReady) return;
@@ -131,6 +140,23 @@ export default function PixiCanvasTest() {
       if (pixiRenderer) {
         pixiRenderer.setOverlayData({
           currentBox: { x: boxX, y: boxY, width, height }
+        });
+      }
+      return;
+    }
+
+    // Handle line drawing (angled baseline or rotation)
+    if (isDrawingLine && lineStart) {
+      setLineEnd({ x: imageX, y: imageY });
+
+      // Update overlay to show the line being drawn
+      if (pixiRenderer) {
+        pixiRenderer.setOverlayData({
+          drawingLine: {
+            start: lineStart,
+            end: { x: imageX, y: imageY },
+            tool: currentTool // 'angled' or 'rotate'
+          }
         });
       }
       return;
@@ -475,6 +501,28 @@ export default function PixiCanvasTest() {
       return;
     }
 
+    // Handle baseline tool (click to add horizontal baseline)
+    if (currentTool === 'baseline') {
+      addBaseline(imageY);
+      return;
+    }
+
+    // Handle angled baseline tool (draw line)
+    if (currentTool === 'angled') {
+      setIsDrawingLine(true);
+      setLineStart({ x: imageX, y: imageY });
+      setLineEnd({ x: imageX, y: imageY });
+      return;
+    }
+
+    // Handle rotation tool (draw line)
+    if (currentTool === 'rotate') {
+      setIsDrawingLine(true);
+      setLineStart({ x: imageX, y: imageY });
+      setLineEnd({ x: imageX, y: imageY });
+      return;
+    }
+
     // Find all boxes at this point for click-through selection
     // Use tolerance of 30px to include corner/edge hitbox zones
     const handleSize = 30 / stage.scale.x;
@@ -669,6 +717,39 @@ export default function PixiCanvasTest() {
       setIsDrawingBox(false);
       setDrawStart(null);
       setCurrentBoxDraw(null);
+
+      // Clear overlay
+      const pixiRenderer = renderer.getRenderer();
+      if (pixiRenderer) {
+        pixiRenderer.setOverlayData({});
+      }
+
+      return;
+    }
+
+    // Finish line drawing (angled baseline or rotation)
+    if (isDrawingLine && lineStart && lineEnd) {
+      const dx = lineEnd.x - lineStart.x;
+      const dy = lineEnd.y - lineStart.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+
+      if (length > 10) { // Minimum line length
+        if (currentTool === 'angled') {
+          // Add angled baseline
+          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+          addAngledBaseline(lineStart, lineEnd, angle);
+        } else if (currentTool === 'rotate') {
+          // Calculate rotation angle
+          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+          // Rotate image to make this line horizontal (negate the angle)
+          setImageRotation((imageRotation || 0) - angle);
+        }
+      }
+
+      // Clear line drawing state
+      setIsDrawingLine(false);
+      setLineStart(null);
+      setLineEnd(null);
 
       // Clear overlay
       const pixiRenderer = renderer.getRenderer();
