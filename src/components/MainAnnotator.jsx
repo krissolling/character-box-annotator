@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import AnnotationCanvas from './canvas/AnnotationCanvas';
+import PixiCanvasTest from './canvas/PixiCanvasTest';
 import CharacterPicker from './sidebar/CharacterPicker';
 import FilterControls from './sidebar/FilterControls';
 import TypographyControls from './sidebar/TypographyControls';
@@ -16,6 +17,7 @@ export default function MainAnnotator() {
   const [previewWidth, setPreviewWidth] = useState(null); // Width in pixels based on aspect ratio
   const [isDragging, setIsDragging] = useState(false);
   const [eyedropperActive, setEyedropperActive] = useState(false);
+  const [useWebGLRenderer, setUseWebGLRenderer] = useState(false); // Toggle for WebGL renderer
   const containerRef = useRef(null);
   const previewContainerRef = useRef(null);
 
@@ -126,9 +128,57 @@ export default function MainAnnotator() {
         minHeight: 0,
         position: 'relative'
       }}>
+        {/* WebGL Toggle Button */}
+        <div style={{
+          position: 'absolute',
+          top: '12px',
+          right: '12px',
+          zIndex: 1000,
+          background: 'rgba(0, 0, 0, 0.8)',
+          padding: '12px 16px',
+          borderRadius: '8px',
+          backdropFilter: 'blur(10px)'
+        }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            color: 'white',
+            fontSize: '13px',
+            fontWeight: '500',
+            cursor: 'pointer',
+            userSelect: 'none'
+          }}>
+            <input
+              type="checkbox"
+              checked={useWebGLRenderer}
+              onChange={(e) => setUseWebGLRenderer(e.target.checked)}
+              style={{
+                width: '16px',
+                height: '16px',
+                cursor: 'pointer'
+              }}
+            />
+            <span>⚡ WebGL Renderer (Test Mode)</span>
+          </label>
+          {useWebGLRenderer && (
+            <div style={{
+              marginTop: '8px',
+              fontSize: '11px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              paddingTop: '8px'
+            }}>
+              <div>🎮 Use mouse wheel to zoom</div>
+              <div>🖱️ Middle-click to pan</div>
+              <div>👆 Click boxes to select</div>
+            </div>
+          )}
+        </div>
+
         {/* Full screen Annotation Canvas */}
         <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
-          <AnnotationCanvas />
+          {useWebGLRenderer ? <PixiCanvasTest /> : <AnnotationCanvas />}
         </div>
 
         {/* Floating Word Preview at bottom */}

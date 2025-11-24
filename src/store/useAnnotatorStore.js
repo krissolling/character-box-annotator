@@ -222,6 +222,29 @@ const useAnnotatorStore = create((set, get) => {
 
   setSelectedBox: (index) => set({ selectedBox: index }),
 
+  // Bring a box to the front (render on top) by moving it to the end of the array
+  bringBoxToFront: (index) => set((state) => {
+    if (index === null || index === undefined || index < 0 || index >= state.boxes.length) {
+      return state; // Invalid index, no change
+    }
+
+    // If already at the end, no need to move
+    if (index === state.boxes.length - 1) {
+      return state;
+    }
+
+    const newBoxes = [...state.boxes];
+    const [movedBox] = newBoxes.splice(index, 1); // Remove from current position
+    newBoxes.push(movedBox); // Add to end
+
+    console.log(`📤 Brought box ${index} to front (now at index ${newBoxes.length - 1})`);
+
+    return {
+      boxes: newBoxes,
+      selectedBox: newBoxes.length - 1 // Update selected index to new position
+    };
+  }),
+
   setCurrentCharIndex: (index) => set({ currentCharIndex: index }),
 
   setSelectedVariant: (charIndex, variantId) => set((state) => ({
