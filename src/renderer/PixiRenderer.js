@@ -2,6 +2,7 @@ import * as PIXI from 'pixi.js';
 import { TileManager } from './TileManager';
 import { SpatialIndex } from './SpatialIndex';
 import { screenToImage, getViewportBounds } from './utils/coordinates';
+import { extendLineToEdges } from './utils/lineIntersection';
 
 /**
  * Main WebGL renderer using pixi.js
@@ -721,22 +722,13 @@ export class PixiRenderer {
       const angleRad = angle * (Math.PI / 180);
       const graphics = new PIXI.Graphics();
 
-      // Calculate extended line
-      const extendLength = (this.sourceImage?.width || 10000) * 2;
-      const dirX = Math.cos(angleRad);
-      const dirY = Math.sin(angleRad);
+      // Calculate line extended to image edges
+      const width = this.sourceImage?.width || 10000;
+      const height = this.sourceImage?.height || 10000;
+      const extended = extendLineToEdges(pos, angleRad, width, height);
 
-      const start = {
-        x: pos.x - dirX * extendLength,
-        y: pos.y - dirY * extendLength
-      };
-      const end = {
-        x: pos.x + dirX * extendLength,
-        y: pos.y + dirY * extendLength
-      };
-
-      graphics.moveTo(start.x, start.y);
-      graphics.lineTo(end.x, end.y);
+      graphics.moveTo(extended.start.x, extended.start.y);
+      graphics.lineTo(extended.end.x, extended.end.y);
       graphics.stroke({
         width: 2 / scale,
         color: 0xFF9800,
@@ -751,7 +743,7 @@ export class PixiRenderer {
       const { start, end, tool } = overlayData.drawingLine;
       const graphics = new PIXI.Graphics();
 
-      // Extend line to full image width for baselines and rotation
+      // Extend line to image edges for baselines and rotation
       let lineStart = start;
       let lineEnd = end;
 
@@ -762,19 +754,18 @@ export class PixiRenderer {
         const length = Math.sqrt(dx * dx + dy * dy);
 
         if (length > 1) {
-          const dirX = dx / length;
-          const dirY = dy / length;
+          // Calculate center point and angle
+          const centerX = (start.x + end.x) / 2;
+          const centerY = (start.y + end.y) / 2;
+          const angleRad = Math.atan2(dy, dx);
 
-          // Extend to image bounds (use a large value)
-          const extendLength = (this.sourceImage?.width || 10000) * 2;
-          lineStart = {
-            x: start.x - dirX * extendLength,
-            y: start.y - dirY * extendLength
-          };
-          lineEnd = {
-            x: start.x + dirX * extendLength,
-            y: start.y + dirY * extendLength
-          };
+          // Extend to image edges
+          const width = this.sourceImage?.width || 10000;
+          const height = this.sourceImage?.height || 10000;
+          const extended = extendLineToEdges({ x: centerX, y: centerY }, angleRad, width, height);
+
+          lineStart = extended.start;
+          lineEnd = extended.end;
         }
       }
 

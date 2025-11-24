@@ -839,23 +839,10 @@ export default function PixiCanvasTest() {
     // Handle subsequent angled baseline mouseup (template mode)
     if (currentTool === 'angled' && angledBaselines.length > 0 && tempAngledBaselinePos) {
       const lastBaseline = angledBaselines[angledBaselines.length - 1];
-      const angleRad = lastBaseline.angle * (Math.PI / 180);
 
-      // Calculate extended line in both directions
-      const extendLength = (renderer.getRenderer()?.sourceImage?.width || 10000) * 2;
-      const dirX = Math.cos(angleRad);
-      const dirY = Math.sin(angleRad);
-
-      const start = {
-        x: tempAngledBaselinePos.x - dirX * extendLength,
-        y: tempAngledBaselinePos.y - dirY * extendLength
-      };
-      const end = {
-        x: tempAngledBaselinePos.x + dirX * extendLength,
-        y: tempAngledBaselinePos.y + dirY * extendLength
-      };
-
-      addAngledBaseline(start, end, lastBaseline.angle);
+      // Use the stored start/end from first baseline (already extended to edges)
+      // Just pass them through - addAngledBaseline will use same angle
+      addAngledBaseline(lastBaseline.start, lastBaseline.end, lastBaseline.angle);
 
       // Clear temp state
       setTempAngledBaselinePos(null);
