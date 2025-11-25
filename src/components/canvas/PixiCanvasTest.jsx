@@ -826,9 +826,67 @@ export default function PixiCanvasTest() {
 
       if (length > 10) { // Minimum line length
         if (currentTool === 'angled' && angledBaselines.length === 0) {
-          // First angled baseline: add with drawn angle
+          // First angled baseline: extend to image edges
           const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-          addAngledBaseline(lineStart, lineEnd, angle);
+          const angleRad = angle * (Math.PI / 180);
+
+          // Calculate center point
+          const centerX = (lineStart.x + lineEnd.x) / 2;
+          const centerY = (lineStart.y + lineEnd.y) / 2;
+
+          // Get image dimensions
+          const pixiRenderer = renderer.getRenderer();
+          const width = pixiRenderer?.sourceImage?.width || 10000;
+          const height = pixiRenderer?.sourceImage?.height || 10000;
+
+          // Calculate edge intersections
+          const cos = Math.cos(angleRad);
+          const sin = Math.sin(angleRad);
+          const intersections = [];
+
+          // Left edge
+          if (cos !== 0) {
+            const t = -centerX / cos;
+            const y = centerY + t * sin;
+            if (y >= 0 && y <= height) intersections.push({ x: 0, y, t });
+          }
+
+          // Right edge
+          if (cos !== 0) {
+            const t = (width - centerX) / cos;
+            const y = centerY + t * sin;
+            if (y >= 0 && y <= height) intersections.push({ x: width, y, t });
+          }
+
+          // Top edge
+          if (sin !== 0) {
+            const t = -centerY / sin;
+            const x = centerX + t * cos;
+            if (x >= 0 && x <= width) intersections.push({ x, y: 0, t });
+          }
+
+          // Bottom edge
+          if (sin !== 0) {
+            const t = (height - centerY) / sin;
+            const x = centerX + t * cos;
+            if (x >= 0 && x <= width) intersections.push({ x, y: height, t });
+          }
+
+          // Sort and get extremes
+          intersections.sort((a, b) => a.t - b.t);
+
+          let start, end;
+          if (intersections.length >= 2) {
+            start = { x: intersections[0].x, y: intersections[0].y };
+            end = { x: intersections[intersections.length - 1].x, y: intersections[intersections.length - 1].y };
+          } else {
+            // Fallback
+            const extendLength = Math.max(width, height) * 2;
+            start = { x: centerX - cos * extendLength, y: centerY - sin * extendLength };
+            end = { x: centerX + cos * extendLength, y: centerY + sin * extendLength };
+          }
+
+          addAngledBaseline(start, end, angle);
 
           // Clear Zustand state
           setAngledBaselineLineStart(null);
