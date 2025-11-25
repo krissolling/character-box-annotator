@@ -1064,7 +1064,7 @@ export default function PixiCanvasTest() {
     setPanStart({ x: e.clientX, y: e.clientY });
   };
 
-  // Zoom with wheel
+  // Zoom with wheel, pan with trackpad scroll
   const handleWheel = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1073,29 +1073,70 @@ export default function PixiCanvasTest() {
     const pixiRenderer = renderer.getRenderer?.();
     if (!pixiRenderer || !renderer.canvasRef?.current) return;
 
-    const rect = renderer.canvasRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    // Detect if this is likely a mouse wheel vs trackpad
+    // Key differences:
+    // - Mouse wheels: deltaMode 1 (line), or deltaMode 0 with discrete integer steps, no deltaX
+    // - Trackpads: deltaMode 0 with smooth/fractional deltas, often have deltaX
+    // - Trackpad pinch: sends ctrlKey = true
+
+    // Trackpad pinch gestures send wheel events with ctrlKey set to true
+    const isPinchZoom = e.ctrlKey;
+
+    // Mouse wheels use deltaMode 1 (DOM_DELTA_LINE)
+    const isLineMode = e.deltaMode === 1;
+
+    // In pixel mode (deltaMode 0), mouse wheels have:
+    // - No horizontal movement (deltaX === 0)
+    // - Integer deltaY values (trackpads often have fractional)
+    const isDiscreteScroll = e.deltaMode === 0 &&
+      e.deltaX === 0 &&
+      Number.isInteger(e.deltaY);
+
+    const isMouseWheel = isLineMode || isDiscreteScroll;
+
+    // Mouse wheel should always zoom, trackpad pinch should zoom, trackpad scroll should pan
+    const shouldZoom = isPinchZoom || isMouseWheel;
 
     const stage = pixiRenderer.app.stage;
-    const oldZoom = stage.scale.x;
 
-    const delta = -e.deltaY * 0.002;
-    const newZoom = Math.max(0.1, Math.min(4.0, oldZoom + delta));
+    if (shouldZoom) {
+      // Zoom behavior
+      const rect = renderer.canvasRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
 
-    // Calculate zoom point in world coordinates
-    const worldX = (mouseX - stage.position.x) / oldZoom;
-    const worldY = (mouseY - stage.position.y) / oldZoom;
+      const oldZoom = stage.scale.x;
 
-    // Apply new zoom
-    stage.scale.set(newZoom, newZoom);
+      // Use smaller delta for smoother zoom
+      // Mouse wheel needs smaller multiplier since deltaY is larger
+      // Pinch zoom needs higher multiplier for responsiveness
+      const multiplier = isMouseWheel ? 0.002 : 0.025;
+      const delta = -e.deltaY * multiplier;
+      const newZoom = Math.max(0.1, Math.min(4.0, oldZoom + delta));
 
-    // Adjust position to keep mouse point stable
-    stage.position.x = mouseX - worldX * newZoom;
-    stage.position.y = mouseY - worldY * newZoom;
+      // Calculate zoom point in world coordinates
+      const worldX = (mouseX - stage.position.x) / oldZoom;
+      const worldY = (mouseY - stage.position.y) / oldZoom;
 
-    // Force immediate render
-    pixiRenderer.needsRender = true;
+      // Apply new zoom
+      stage.scale.set(newZoom, newZoom);
+
+      // Adjust position to keep mouse point stable
+      stage.position.x = mouseX - worldX * newZoom;
+      stage.position.y = mouseY - worldY * newZoom;
+
+      // Force immediate render
+      pixiRenderer.needsRender = true;
+    } else {
+      // Trackpad two-finger scroll to pan
+      const panMultiplier = 1.5;
+      const currentPan = stage.position;
+
+      renderer.setPan(
+        currentPan.x - e.deltaX * panMultiplier,
+        currentPan.y - e.deltaY * panMultiplier
+      );
+    }
   }, [renderer]);
 
   if (!image) {
