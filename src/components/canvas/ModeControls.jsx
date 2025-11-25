@@ -138,7 +138,7 @@ export default function ModeControls() {
         <input
           type="range"
           min="10"
-          max="400"
+          max="600"
           value={brushBoxSize}
           onChange={(e) => setBrushBoxSize(parseInt(e.target.value))}
           style={{ width: '80px' }}

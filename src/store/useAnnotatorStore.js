@@ -326,8 +326,7 @@ const useAnnotatorStore = create((set, get) => {
   clearAutoSolveRegions: () => set({
     autoSolveRegions: [],
     currentAutoSolveRegion: null,
-    isSelectingAutoSolveRegion: false,
-    currentTool: 'box',
+    // Stay in auto-solve mode so user can continue drawing regions
   }),
 
   // Brush box actions
@@ -343,7 +342,7 @@ const useAnnotatorStore = create((set, get) => {
     isAngledBaselineMode: false,
   }),
 
-  setBrushBoxSize: (size) => set({ brushBoxSize: Math.max(10, Math.min(400, size)) }),
+  setBrushBoxSize: (size) => set({ brushBoxSize: Math.max(5, Math.min(600, size)) }),
 
   setBrushSizeDragStart: (x, currentSize) => set({
     brushSizeDragStart: x,
@@ -362,6 +361,11 @@ const useAnnotatorStore = create((set, get) => {
     isBrushBoxMode: false,
     brushStrokes: [],
     currentTool: 'box',
+  }),
+
+  // Clear brush strokes but stay in brush mode
+  clearBrushStrokes: () => set({
+    brushStrokes: [],
   }),
 
   confirmBrushBox: () => {

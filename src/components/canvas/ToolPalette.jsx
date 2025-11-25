@@ -1,6 +1,7 @@
-import { Square, Edit3, Zap, RotateCw, Minus, Slash, MousePointer2, Search, RefreshCcw } from 'lucide-react';
+import { Square, Paintbrush, Zap, RotateCw, Minus, Slash, MousePointer2, Search, RefreshCcw } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 import ZoomControls from './ZoomControls';
+import SplineSlider from '../ui/SplineSlider';
 
 export default function ToolPalette() {
   const currentTool = useAnnotatorStore((state) => state.currentTool);
@@ -31,6 +32,8 @@ export default function ToolPalette() {
   const isZoomMode = useAnnotatorStore((state) => state.isZoomMode);
   const imageRotation = useAnnotatorStore((state) => state.imageRotation);
   const resetRotation = useAnnotatorStore((state) => state.resetRotation);
+  const brushBoxSize = useAnnotatorStore((state) => state.brushBoxSize);
+  const setBrushBoxSize = useAnnotatorStore((state) => state.setBrushBoxSize);
 
   // Helper function to find first available unannotated character
   const findFirstAvailableChar = () => {
@@ -125,7 +128,7 @@ export default function ToolPalette() {
   const tools = [
     { id: 'pointer', icon: MousePointer2, label: 'Pointer', value: 'pointer', shortcut: 'V' },
     { id: 'box', icon: Square, label: 'Box', value: 'box', shortcut: 'M' },
-    { id: 'brush', icon: Edit3, label: 'Brush', value: 'brush', shortcut: 'B' },
+    { id: 'brush', icon: Paintbrush, label: 'Brush', value: 'brush', shortcut: 'B' },
     { id: 'auto-solve', icon: Zap, label: 'Auto-Solve', value: 'autosolve' },
     { id: 'baseline', icon: Minus, label: 'Baseline', value: 'baseline' },
     { id: 'angled', icon: Slash, label: 'Angled', value: 'angled' },
@@ -164,6 +167,30 @@ export default function ToolPalette() {
             >
               <Icon style={{ width: '14px', height: '14px' }} />
             </button>
+            {/* Brush size slider - show next to brush button when active */}
+            {tool.value === 'brush' && isBrushBoxMode && (
+              <div style={{
+                position: 'absolute',
+                left: '100%',
+                top: '0',
+                marginLeft: '12px',
+                display: 'grid',
+                gridTemplateColumns: '1fr',
+                alignItems: 'center',
+                height: '32px',
+                width: '139px' // 91px slider + 44px input + 4px gap
+              }}>
+                <SplineSlider
+                  value={brushBoxSize}
+                  onChange={setBrushBoxSize}
+                  min={5}
+                  max={600}
+                  step={1}
+                  showInput={true}
+                  inputWidth="44px"
+                />
+              </div>
+            )}
             {/* Rotation info - show next to rotate button when active */}
             {tool.value === 'rotate' && isRotationMode && (
               <div style={{

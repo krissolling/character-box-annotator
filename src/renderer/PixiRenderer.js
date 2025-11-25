@@ -47,6 +47,10 @@ export class PixiRenderer {
     // Viewport tracking
     this.lastViewport = null;
     this.lastZoom = 1.0;
+
+    // Brush stroke cache (to avoid recreating RenderTexture every frame)
+    this.cachedBrushSprite = null;
+    this.cachedBrushStrokesHash = null;
   }
 
   /**
@@ -634,46 +638,198 @@ export class PixiRenderer {
       this.overlayLayer.addChild(graphics);
     }
 
-    // Render completed brush strokes
-    if (overlayData.brushStrokes && overlayData.brushStrokes.length > 0) {
-      for (const stroke of overlayData.brushStrokes) {
-        // Handle both old format (array) and new format (object with points)
-        const points = stroke.points || stroke;
-        const strokeSize = stroke.size || overlayData.brushSize || 40;
+    // Render auto-solve regions (completed regions)
+    if (overlayData.autoSolveRegions && overlayData.autoSolveRegions.length > 0) {
+      overlayData.autoSolveRegions.forEach((region, index) => {
+        const graphics = new PIXI.Graphics();
 
-        if (points && points.length > 0) {
-          const graphics = new PIXI.Graphics();
-          graphics.moveTo(points[0].x, points[0].y);
-          for (let i = 1; i < points.length; i++) {
-            graphics.lineTo(points[i].x, points[i].y);
+        // Draw region rectangle
+        graphics.rect(region.x, region.y, region.width, region.height);
+        graphics.stroke({
+          width: 2 / scale,
+          color: 0x4CAF50, // Green for completed regions
+          alpha: 0.8
+        });
+        graphics.fill({ color: 0x4CAF50, alpha: 0.1 });
+
+        this.overlayLayer.addChild(graphics);
+
+        // Draw region number label
+        const text = new PIXI.Text({
+          text: `${index + 1}`,
+          style: {
+            fontFamily: 'Arial',
+            fontSize: 16 / scale,
+            fontWeight: 'bold',
+            fill: 0x4CAF50,
+            align: 'center'
           }
-          graphics.stroke({
-            width: strokeSize / scale,
-            color: 0x2196F3,
-            alpha: 0.8,
-            cap: 'round',
-            join: 'round'
-          });
-          this.overlayLayer.addChild(graphics);
+        });
+        text.x = region.x + 8 / scale;
+        text.y = region.y + 8 / scale;
+        this.overlayLayer.addChild(text);
+      });
+    }
+
+    // Render current auto-solve region being drawn
+    if (overlayData.currentAutoSolveRegion &&
+        overlayData.currentAutoSolveRegion.width > 0 &&
+        overlayData.currentAutoSolveRegion.height > 0) {
+      const region = overlayData.currentAutoSolveRegion;
+      const graphics = new PIXI.Graphics();
+
+      // Draw region rectangle with dashed line effect (orange for current)
+      graphics.rect(region.x, region.y, region.width, region.height);
+      graphics.stroke({
+        width: 3 / scale,
+        color: 0xFF9800, // Orange for current region
+        alpha: 0.8
+      });
+      graphics.fill({ color: 0xFF9800, alpha: 0.1 });
+
+      this.overlayLayer.addChild(graphics);
+    }
+
+    // Render all brush strokes (completed + current) together
+    // Use RenderTexture to flatten everything, then apply alpha uniformly
+    // Cache the completed strokes sprite to avoid recreating every frame (causes flicker during pan)
+    const hasCompletedStrokes = overlayData.brushStrokes && overlayData.brushStrokes.length > 0;
+    const hasCurrentStroke = overlayData.currentStroke && overlayData.currentStroke.length > 0;
+
+    if (hasCompletedStrokes || hasCurrentStroke) {
+      // Create a hash of completed strokes to detect changes
+      const completedStrokesHash = hasCompletedStrokes
+        ? JSON.stringify(overlayData.brushStrokes.map(s => s.points?.length || 0))
+        : '';
+
+      // Check if we can reuse cached sprite for completed strokes
+      const canUseCachedSprite = hasCompletedStrokes &&
+        !hasCurrentStroke &&
+        this.cachedBrushSprite &&
+        this.cachedBrushStrokesHash === completedStrokesHash;
+
+      if (canUseCachedSprite) {
+        // Reuse cached sprite - just add it to overlay
+        this.overlayLayer.addChild(this.cachedBrushSprite);
+      } else {
+        // Need to render strokes (either cache changed or we have a current stroke)
+        const strokeContainer = new PIXI.Container();
+
+        // Add completed strokes
+        if (hasCompletedStrokes) {
+          for (const stroke of overlayData.brushStrokes) {
+            const points = stroke.points || stroke;
+            const strokeSize = stroke.size || overlayData.brushSize || 40;
+            const strokeWidth = strokeSize;
+
+            if (points && points.length > 1) {
+              const graphics = new PIXI.Graphics();
+              graphics.moveTo(points[0].x, points[0].y);
+              for (let i = 1; i < points.length; i++) {
+                graphics.lineTo(points[i].x, points[i].y);
+              }
+              graphics.stroke({
+                width: strokeWidth,
+                color: 0x2196F3,
+                cap: 'round',
+                join: 'round'
+              });
+              strokeContainer.addChild(graphics);
+            } else if (points && points.length === 1) {
+              const graphics = new PIXI.Graphics();
+              graphics.circle(points[0].x, points[0].y, strokeWidth / 2);
+              graphics.fill({ color: 0x2196F3 });
+              strokeContainer.addChild(graphics);
+            }
+          }
         }
+
+        // Add current stroke being drawn
+        if (hasCurrentStroke) {
+          const stroke = overlayData.currentStroke;
+          const strokeWidth = overlayData.brushSize || 40;
+
+          if (stroke.length > 1) {
+            const graphics = new PIXI.Graphics();
+            graphics.moveTo(stroke[0].x, stroke[0].y);
+            for (let i = 1; i < stroke.length; i++) {
+              graphics.lineTo(stroke[i].x, stroke[i].y);
+            }
+            graphics.stroke({
+              width: strokeWidth,
+              color: 0x2196F3,
+              cap: 'round',
+              join: 'round'
+            });
+            strokeContainer.addChild(graphics);
+          } else if (stroke.length === 1) {
+            const graphics = new PIXI.Graphics();
+            graphics.circle(stroke[0].x, stroke[0].y, strokeWidth / 2);
+            graphics.fill({ color: 0x2196F3 });
+            strokeContainer.addChild(graphics);
+          }
+        }
+
+        // Create RenderTexture large enough to hold all strokes
+        const bounds = strokeContainer.getBounds();
+        if (bounds.width > 0 && bounds.height > 0) {
+          const maxBrushSize = overlayData.brushSize || 40;
+          const padding = maxBrushSize;
+          const textureWidth = Math.ceil(bounds.width + padding * 2);
+          const textureHeight = Math.ceil(bounds.height + padding * 2);
+
+          const renderTexture = PIXI.RenderTexture.create({
+            width: textureWidth,
+            height: textureHeight,
+            resolution: window.devicePixelRatio || 2
+          });
+
+          strokeContainer.position.set(-bounds.x + padding, -bounds.y + padding);
+
+          this.app.renderer.render({
+            container: strokeContainer,
+            target: renderTexture
+          });
+
+          const sprite = new PIXI.Sprite(renderTexture);
+          sprite.position.set(bounds.x - padding, bounds.y - padding);
+          sprite.alpha = 0.6;
+
+          this.overlayLayer.addChild(sprite);
+
+          // Cache the sprite if we only have completed strokes (no current stroke)
+          if (hasCompletedStrokes && !hasCurrentStroke) {
+            // Destroy old cached sprite if it exists
+            if (this.cachedBrushSprite) {
+              this.cachedBrushSprite.destroy({ texture: true, textureSource: true });
+            }
+            this.cachedBrushSprite = sprite;
+            this.cachedBrushStrokesHash = completedStrokesHash;
+          }
+
+          strokeContainer.destroy({ children: true });
+        }
+      }
+    } else {
+      // No strokes - clear cache
+      if (this.cachedBrushSprite) {
+        this.cachedBrushSprite.destroy({ texture: true, textureSource: true });
+        this.cachedBrushSprite = null;
+        this.cachedBrushStrokesHash = null;
       }
     }
 
-    // Render current brush stroke being drawn
-    if (overlayData.currentStroke && overlayData.currentStroke.length > 0) {
+    // Render brush cursor (circle showing brush size)
+    if (overlayData.brushCursor) {
+      const { x, y, size } = overlayData.brushCursor;
       const graphics = new PIXI.Graphics();
-      const stroke = overlayData.currentStroke;
 
-      graphics.moveTo(stroke[0].x, stroke[0].y);
-      for (let i = 1; i < stroke.length; i++) {
-        graphics.lineTo(stroke[i].x, stroke[i].y);
-      }
+      // Draw brush cursor circle
+      graphics.circle(x, y, size / 2);
       graphics.stroke({
-        width: (overlayData.brushSize || 40) / scale,
-        color: 0x2196F3,
-        alpha: 0.6,
-        cap: 'round',
-        join: 'round'
+        width: 2 / scale,
+        color: 0x4CAF50,
+        alpha: 1
       });
 
       this.overlayLayer.addChild(graphics);

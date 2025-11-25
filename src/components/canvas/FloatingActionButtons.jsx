@@ -12,7 +12,7 @@ export default function FloatingActionButtons() {
   const brushStrokes = useAnnotatorStore((state) => state.brushStrokes);
   const autoSolveRegions = useAnnotatorStore((state) => state.autoSolveRegions);
   const confirmBrushBox = useAnnotatorStore((state) => state.confirmBrushBox);
-  const cancelBrushBox = useAnnotatorStore((state) => state.cancelBrushBox);
+  const clearBrushStrokes = useAnnotatorStore((state) => state.clearBrushStrokes);
   const cancelAutoSolve = useAnnotatorStore((state) => state.cancelAutoSolve);
   const clearAutoSolveRegions = useAnnotatorStore((state) => state.clearAutoSolveRegions);
   const image = useAnnotatorStore((state) => state.image);
@@ -98,7 +98,7 @@ export default function FloatingActionButtons() {
 
   const handleCancel = () => {
     if (isBrushBoxMode) {
-      cancelBrushBox();
+      clearBrushStrokes(); // Clear strokes but stay in brush mode
     } else if (isSelectingAutoSolveRegion) {
       cancelAutoSolve();
     }

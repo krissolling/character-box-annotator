@@ -2,20 +2,16 @@ import { useState } from 'react';
 import { RefreshCcw, Check, X } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 import { processAutoSolveRegions } from '../../utils/autoSolve';
-import SplineSlider from '../ui/SplineSlider';
 
 export default function RightModePanel() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [ocrProgress, setOcrProgress] = useState('');
 
-  const currentTool = useAnnotatorStore((state) => state.currentTool);
   const isBrushBoxMode = useAnnotatorStore((state) => state.isBrushBoxMode);
   const isSelectingAutoSolveRegion = useAnnotatorStore((state) => state.isSelectingAutoSolveRegion);
   const isRotationMode = useAnnotatorStore((state) => state.isRotationMode);
   const isBaselineMode = useAnnotatorStore((state) => state.isBaselineMode);
   const isAngledBaselineMode = useAnnotatorStore((state) => state.isAngledBaselineMode);
-  const brushBoxSize = useAnnotatorStore((state) => state.brushBoxSize);
-  const setBrushBoxSize = useAnnotatorStore((state) => state.setBrushBoxSize);
   const imageRotation = useAnnotatorStore((state) => state.imageRotation);
   const angledBaselines = useAnnotatorStore((state) => state.angledBaselines);
   const text = useAnnotatorStore((state) => state.text);
@@ -25,7 +21,7 @@ export default function RightModePanel() {
   const brushStrokes = useAnnotatorStore((state) => state.brushStrokes);
   const autoSolveRegions = useAnnotatorStore((state) => state.autoSolveRegions);
   const confirmBrushBox = useAnnotatorStore((state) => state.confirmBrushBox);
-  const cancelBrushBox = useAnnotatorStore((state) => state.cancelBrushBox);
+  const clearBrushStrokes = useAnnotatorStore((state) => state.clearBrushStrokes);
   const cancelAutoSolve = useAnnotatorStore((state) => state.cancelAutoSolve);
   const clearAutoSolveRegions = useAnnotatorStore((state) => state.clearAutoSolveRegions);
   const image = useAnnotatorStore((state) => state.image);
@@ -104,7 +100,7 @@ export default function RightModePanel() {
 
   const handleCancel = () => {
     if (isBrushBoxMode) {
-      cancelBrushBox();
+      clearBrushStrokes(); // Clear strokes but stay in brush mode
     } else if (isSelectingAutoSolveRegion) {
       cancelAutoSolve();
     }
@@ -148,17 +144,8 @@ export default function RightModePanel() {
         );
       }
 
-      // Just show brush size slider - character shown in CharacterPicker
-      return (
-        <SplineSlider
-          value={brushBoxSize}
-          onChange={setBrushBoxSize}
-          min={10}
-          max={400}
-          showInput={true}
-          inputWidth="40px"
-        />
-      );
+      // Brush size slider is now shown next to brush tool button in ToolPalette
+      return null;
     }
 
     // Auto-solve mode
@@ -242,7 +229,7 @@ export default function RightModePanel() {
   return (
     <div className="te-panel" style={{
       position: 'absolute',
-      top: '12px',
+      top: '72px', // Below CharacterPicker (12px top + ~48px height + 12px gap)
       left: '50%',
       transform: 'translateX(-50%)',
       display: 'flex',

@@ -7,7 +7,7 @@ export default function BrushBoxControls() {
   const brushStrokes = useAnnotatorStore((state) => state.brushStrokes);
   const setBrushBoxSize = useAnnotatorStore((state) => state.setBrushBoxSize);
   const confirmBrushBox = useAnnotatorStore((state) => state.confirmBrushBox);
-  const cancelBrushBox = useAnnotatorStore((state) => state.cancelBrushBox);
+  const clearBrushStrokes = useAnnotatorStore((state) => state.clearBrushStrokes);
 
   if (!isBrushBoxMode) {
     return null;
@@ -37,7 +37,7 @@ export default function BrushBoxControls() {
           <input
             type="range"
             min="10"
-            max="400"
+            max="600"
             step="5"
             value={brushBoxSize}
             onChange={(e) => setBrushBoxSize(parseInt(e.target.value))}
@@ -68,12 +68,12 @@ export default function BrushBoxControls() {
             </button>
 
             <button
-              onClick={cancelBrushBox}
+              onClick={clearBrushStrokes}
               className="px-4 py-2 bg-red-500 text-white rounded-lg font-medium
                          hover:bg-red-600 transition-colors flex items-center gap-2"
             >
               <X className="w-4 h-4" />
-              Cancel
+              Clear
             </button>
           </div>
         </div>

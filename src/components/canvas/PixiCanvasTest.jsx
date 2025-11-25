@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePixiRenderer } from '../../renderer/usePixiRenderer';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 import ToolPalette from './ToolPalette';
@@ -45,6 +45,50 @@ export default function PixiCanvasTest() {
   const setAngledBaselineLineEnd = useAnnotatorStore(state => state.setAngledBaselineLineEnd);
   const setTempAngledBaselinePos = useAnnotatorStore(state => state.setTempAngledBaselinePos);
 
+  // Zoom/pan state from Zustand (for syncing with ZoomControls)
+  const zoomLevel = useAnnotatorStore(state => state.zoomLevel);
+  const panOffset = useAnnotatorStore(state => state.panOffset);
+  const setZoomLevel = useAnnotatorStore(state => state.setZoomLevel);
+  const setPanOffset = useAnnotatorStore(state => state.setPanOffset);
+  const fitToView = useAnnotatorStore(state => state.fitToView);
+
+  // Zoom tool state
+  const isZoomMode = useAnnotatorStore(state => state.isZoomMode);
+  const zoomDragStart = useAnnotatorStore(state => state.zoomDragStart);
+  const zoomStartLevel = useAnnotatorStore(state => state.zoomStartLevel);
+  const setZoomDragStart = useAnnotatorStore(state => state.setZoomDragStart);
+  const clearZoomDrag = useAnnotatorStore(state => state.clearZoomDrag);
+
+  // Tool actions for keyboard shortcuts
+  const setCurrentTool = useAnnotatorStore(state => state.setCurrentTool);
+  const startBrushBoxMode = useAnnotatorStore(state => state.startBrushBoxMode);
+  const cancelBrushBox = useAnnotatorStore(state => state.cancelBrushBox);
+  const startZoomMode = useAnnotatorStore(state => state.startZoomMode);
+  const cancelZoom = useAnnotatorStore(state => state.cancelZoom);
+  const cancelAutoSolve = useAnnotatorStore(state => state.cancelAutoSolve);
+  const cancelRotation = useAnnotatorStore(state => state.cancelRotation);
+  const cancelBaseline = useAnnotatorStore(state => state.cancelBaseline);
+  const cancelAngledBaseline = useAnnotatorStore(state => state.cancelAngledBaseline);
+  const isSelectingAutoSolveRegion = useAnnotatorStore(state => state.isSelectingAutoSolveRegion);
+  const autoSolveRegions = useAnnotatorStore(state => state.autoSolveRegions);
+  const currentAutoSolveRegion = useAnnotatorStore(state => state.currentAutoSolveRegion);
+  const addAutoSolveRegion = useAnnotatorStore(state => state.addAutoSolveRegion);
+  const setCurrentAutoSolveRegion = useAnnotatorStore(state => state.setCurrentAutoSolveRegion);
+  const isRotationMode = useAnnotatorStore(state => state.isRotationMode);
+  const isBaselineMode = useAnnotatorStore(state => state.isBaselineMode);
+  const isAngledBaselineMode = useAnnotatorStore(state => state.isAngledBaselineMode);
+  const startAutoSolveRegionSelection = useAnnotatorStore(state => state.startAutoSolveRegionSelection);
+  const startRotationMode = useAnnotatorStore(state => state.startRotationMode);
+  const startBaselineMode = useAnnotatorStore(state => state.startBaselineMode);
+  const startAngledBaselineMode = useAnnotatorStore(state => state.startAngledBaselineMode);
+
+  // Temp tool override state for Cmd key
+  const [tempToolOverride, setTempToolOverride] = useState(null);
+  const [savedModeState, setSavedModeState] = useState(null);
+
+  // Track if we're currently updating from renderer (to prevent feedback loops)
+  const isUpdatingFromRenderer = useRef(false);
+
   const renderer = usePixiRenderer({
     tileSize: 512,
     maxLevels: 4
@@ -58,11 +102,18 @@ export default function PixiCanvasTest() {
     renderer.loadImage(image)
       .then(() => {
         console.log('✅ Image loaded successfully');
+
+        // Fit to view after image loads
+        const pixiRenderer = renderer.getRenderer();
+        if (pixiRenderer && renderer.canvasRef?.current) {
+          const containerRect = renderer.canvasRef.current.parentElement.getBoundingClientRect();
+          fitToView(image.width, image.height, containerRect.width, containerRect.height);
+        }
       })
       .catch(err => {
         console.error('❌ Failed to load image:', err);
       });
-  }, [renderer.isReady, image]);
+  }, [renderer.isReady, image, fitToView]);
 
   // Update boxes when they change
   useEffect(() => {
@@ -97,41 +148,235 @@ export default function PixiCanvasTest() {
     }
   }, [renderer.isReady, imageRotation]);
 
-  // Sync brush strokes to overlay
+  // Sync brush strokes to overlay (and clear when exiting brush mode)
+  // Note: We don't depend on brushBoxSize here because the mouse move handler
+  // updates the overlay with the current brush size during drag operations
   useEffect(() => {
     if (!renderer.isReady) return;
     const pixiRenderer = renderer.getRenderer();
-    if (pixiRenderer && isBrushBoxMode) {
+    if (!pixiRenderer) return;
+
+    if (isBrushBoxMode) {
       // Update overlay with current brush strokes
       pixiRenderer.setOverlayData({
         brushStrokes: brushStrokes,
         brushSize: brushBoxSize
       });
+    } else {
+      // Clear brush overlay when not in brush mode
+      pixiRenderer.setOverlayData({});
     }
-  }, [renderer.isReady, brushStrokes, isBrushBoxMode, brushBoxSize]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderer.isReady, brushStrokes, isBrushBoxMode]);
 
-  // Drag state
+  // Sync Zustand zoom/pan to renderer (for ZoomControls buttons)
+  useEffect(() => {
+    if (!renderer.isReady || isUpdatingFromRenderer.current) return;
+    const pixiRenderer = renderer.getRenderer();
+    if (!pixiRenderer) return;
+
+    const stage = pixiRenderer.app.stage;
+    const currentZoom = stage.scale.x;
+    const currentPanX = stage.position.x;
+    const currentPanY = stage.position.y;
+
+    // Only update if values differ (with small tolerance for floating point)
+    const zoomDiff = Math.abs(currentZoom - zoomLevel) > 0.001;
+    const panDiff = Math.abs(currentPanX - panOffset.x) > 0.5 || Math.abs(currentPanY - panOffset.y) > 0.5;
+
+    if (zoomDiff || panDiff) {
+      renderer.setZoom(zoomLevel);
+      renderer.setPan(panOffset.x, panOffset.y);
+    }
+  }, [renderer.isReady, zoomLevel, panOffset]);
+
+  // Drag state (declared before useEffects that reference them)
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [dragStart, setDragStart] = useState(null);
   const [boxStart, setBoxStart] = useState(null);
   const [resizeCorner, setResizeCorner] = useState(null);
   const [cursor, setCursor] = useState('default');
-  const [draggedBoxPreview, setDraggedBoxPreview] = useState(null); // Preview during drag/resize
+  const [draggedBoxPreview, setDraggedBoxPreview] = useState(null);
 
   // Drawing state
   const [isDrawingBox, setIsDrawingBox] = useState(false);
   const [drawStart, setDrawStart] = useState(null);
   const [currentBoxDraw, setCurrentBoxDraw] = useState(null);
 
-  // Brush state (local - for current stroke being drawn)
+  // Brush state
   const [currentStroke, setCurrentStroke] = useState([]);
-  const [isDrawingStroke, setIsDrawingStroke] = useState(false); // Currently drawing a stroke
+  const [isDrawingStroke, setIsDrawingStroke] = useState(false);
+  const [brushSizeDragStart, setBrushSizeDragStart] = useState(null); // For shift+drag brush resize
+  const [brushSizeStartValue, setBrushSizeStartValue] = useState(40);
+  const [brushSizeDragCenter, setBrushSizeDragCenter] = useState(null); // Locked position for brush circle during resize
+  const setBrushBoxSize = useAnnotatorStore(state => state.setBrushBoxSize);
 
   // Baseline/rotation state
-  const [isDrawingLine, setIsDrawingLine] = useState(false); // Drawing baseline or rotation line
+  const [isDrawingLine, setIsDrawingLine] = useState(false);
   const [lineStart, setLineStart] = useState(null);
   const [lineEnd, setLineEnd] = useState(null);
+
+  // Auto-solve region drawing state
+  const [isDrawingRegion, setIsDrawingRegion] = useState(false);
+  const [regionStart, setRegionStart] = useState(null);
+
+  // Keyboard shortcuts for tool selection (v, m, b, z)
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      // Ignore if typing in an input field
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      // Tool shortcuts
+      if (e.key === 'v' || e.key === 'V') {
+        // V for pointer (selection tool)
+        cancelBrushBox();
+        cancelAutoSolve();
+        cancelRotation();
+        cancelBaseline();
+        cancelAngledBaseline();
+        cancelZoom();
+        setCurrentTool('pointer');
+      } else if (e.key === 'm' || e.key === 'M') {
+        // M for box mode
+        cancelBrushBox();
+        cancelAutoSolve();
+        cancelRotation();
+        cancelBaseline();
+        cancelAngledBaseline();
+        cancelZoom();
+        setCurrentTool('box');
+      } else if (e.key === 'b' || e.key === 'B') {
+        // B for brush
+        if (!image) return;
+        cancelZoom();
+        startBrushBoxMode();
+      } else if (e.key === 'z' || e.key === 'Z') {
+        // Z for zoom
+        if (!image) return;
+        cancelBrushBox();
+        cancelAutoSolve();
+        cancelRotation();
+        cancelBaseline();
+        cancelAngledBaseline();
+        startZoomMode();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [
+    image,
+    setCurrentTool,
+    cancelBrushBox,
+    cancelAutoSolve,
+    cancelRotation,
+    cancelBaseline,
+    cancelAngledBaseline,
+    cancelZoom,
+    startBrushBoxMode,
+    startZoomMode
+  ]);
+
+  // Handle Cmd key for temporary pointer mode
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Check for Meta key (Cmd on Mac)
+      if (e.metaKey && !tempToolOverride) {
+        // Save current tool and mode state
+        const modeState = {
+          tool: currentTool,
+          isBrushBoxMode,
+          isSelectingAutoSolveRegion,
+          isRotationMode,
+          isBaselineMode,
+          isAngledBaselineMode,
+          isZoomMode
+        };
+        setSavedModeState(modeState);
+
+        // Cancel all active modes
+        cancelBrushBox();
+        cancelAutoSolve();
+        cancelRotation();
+        cancelBaseline();
+        cancelAngledBaseline();
+        cancelZoom();
+
+        // Switch to pointer tool
+        setCurrentTool('pointer');
+        setTempToolOverride('pointer');
+      }
+    };
+
+    const handleKeyUp = (e) => {
+      // When Meta key is released, restore original mode
+      if (e.key === 'Meta' && tempToolOverride === 'pointer' && savedModeState) {
+        // Don't restore if currently dragging or resizing
+        if (isDragging || isResizing) {
+          setTempToolOverride(null);
+          return;
+        }
+
+        setTempToolOverride(null);
+
+        // Restore original tool
+        setCurrentTool(savedModeState.tool);
+
+        // Restore active modes
+        if (savedModeState.isBrushBoxMode) {
+          startBrushBoxMode();
+        } else if (savedModeState.isSelectingAutoSolveRegion) {
+          startAutoSolveRegionSelection();
+        } else if (savedModeState.isRotationMode) {
+          startRotationMode();
+        } else if (savedModeState.isBaselineMode) {
+          startBaselineMode();
+        } else if (savedModeState.isAngledBaselineMode) {
+          startAngledBaselineMode();
+        } else if (savedModeState.isZoomMode) {
+          startZoomMode();
+        }
+
+        setSavedModeState(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [
+    currentTool,
+    tempToolOverride,
+    savedModeState,
+    isBrushBoxMode,
+    isSelectingAutoSolveRegion,
+    isRotationMode,
+    isBaselineMode,
+    isAngledBaselineMode,
+    isZoomMode,
+    isDragging,
+    isResizing,
+    setCurrentTool,
+    cancelBrushBox,
+    cancelAutoSolve,
+    cancelRotation,
+    cancelBaseline,
+    cancelAngledBaseline,
+    cancelZoom,
+    startBrushBoxMode,
+    startAutoSolveRegionSelection,
+    startRotationMode,
+    startBaselineMode,
+    startAngledBaselineMode,
+    startZoomMode
+  ]);
 
   // Mouse interaction
   const handleMouseMove = (e) => {
@@ -175,6 +420,39 @@ export default function PixiCanvasTest() {
         pixiRenderer.setOverlayData({
           tempBaseline: imageY
         });
+      }
+      return;
+    }
+
+    // Handle zoom tool drag
+    if (isZoomMode && zoomDragStart) {
+      // Horizontal drag changes zoom: right = zoom in, left = zoom out
+      const deltaX = e.clientX - zoomDragStart.clientX;
+      // Scale factor: 200px drag = double/half zoom
+      const zoomFactor = Math.pow(2, deltaX / 200);
+
+      const newZoom = Math.max(0.1, Math.min(4.0, zoomStartLevel * zoomFactor));
+
+      // Zoom toward the original cursor position
+      if (newZoom !== stage.scale.x) {
+        const scaleDifference = newZoom - zoomStartLevel;
+        const newPanX = zoomDragStart.panX - zoomDragStart.imageX * scaleDifference;
+        const newPanY = zoomDragStart.panY - zoomDragStart.imageY * scaleDifference;
+
+        // Apply to renderer
+        stage.scale.set(newZoom, newZoom);
+        stage.position.x = newPanX;
+        stage.position.y = newPanY;
+
+        // Sync to Zustand store
+        isUpdatingFromRenderer.current = true;
+        setZoomLevel(newZoom);
+        setPanOffset({ x: newPanX, y: newPanY });
+        requestAnimationFrame(() => {
+          isUpdatingFromRenderer.current = false;
+        });
+
+        pixiRenderer.needsRender = true;
       }
       return;
     }
@@ -226,6 +504,24 @@ export default function PixiCanvasTest() {
       return;
     }
 
+    // Handle brush size drag (shift+drag)
+    if (isBrushBoxMode && brushSizeDragStart !== null && brushSizeDragCenter) {
+      const deltaX = e.clientX - brushSizeDragStart;
+      // 1px drag = 1px brush size change
+      const newSize = Math.max(5, Math.min(600, brushSizeStartValue + deltaX));
+      setBrushBoxSize(newSize);
+
+      // Update brush cursor to show new size at locked center position
+      if (pixiRenderer) {
+        pixiRenderer.setOverlayData({
+          brushStrokes: brushStrokes,
+          brushSize: newSize,
+          brushCursor: { x: brushSizeDragCenter.x, y: brushSizeDragCenter.y, size: newSize }
+        });
+      }
+      return;
+    }
+
     // Handle brushing
     if (isDrawingStroke) {
       const newStroke = [...currentStroke, { x: imageX, y: imageY }];
@@ -237,6 +533,25 @@ export default function PixiCanvasTest() {
           brushStrokes: brushStrokes,
           currentStroke: newStroke,
           brushSize: brushBoxSize
+        });
+      }
+      return;
+    }
+
+    // Handle auto-solve region drawing
+    if (isDrawingRegion && regionStart) {
+      const x = Math.min(regionStart.x, imageX);
+      const y = Math.min(regionStart.y, imageY);
+      const width = Math.abs(imageX - regionStart.x);
+      const height = Math.abs(imageY - regionStart.y);
+      const newRegion = { x, y, width, height };
+      setCurrentAutoSolveRegion(newRegion);
+
+      // Update overlay with current region
+      if (pixiRenderer) {
+        pixiRenderer.setOverlayData({
+          autoSolveRegions: autoSolveRegions,
+          currentAutoSolveRegion: newRegion
         });
       }
       return;
@@ -327,159 +642,172 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Handle hover and cursor changes
-    if (!isPanning && !isDragging && !isResizing && !isDrawingBox && !isBrushBoxMode) {
-      // Set cursor for drawing tools
-      if (currentTool === 'box') {
-        setCursor('crosshair');
-        return;
-      }
+    // Handle cursor based on current state and tool
+    // Priority: active operations > tool-specific > hover
 
-      if (isBrushBoxMode) {
-        setCursor('crosshair');
-        return;
-      }
-
-      // Smart hover: Show hover on boxes whose corners/edges are under cursor
-      // This matches the click behavior for consistency
-      // Use tolerance of 30px to include corner/edge hitbox zones
-      const handleSize = 30 / pixiRenderer.app.stage.scale.x;
-      const allBoxesAtPoint = renderer.findAllBoxesAtPoint(x, y, handleSize);
-      let hoverBoxItem = null;
-
-      if (allBoxesAtPoint.length > 0) {
-        const edgeThreshold = 15 / pixiRenderer.app.stage.scale.x;
-
-        // Check if cursor is near any box's corner or edge (same logic as click)
-        for (const item of allBoxesAtPoint) {
-          const box = boxes[item.boxIndex];
-          if (!box) continue;
-
-          // Check corners
-          const corners = [
-            { x: box.x, y: box.y },
-            { x: box.x + box.width, y: box.y },
-            { x: box.x, y: box.y + box.height },
-            { x: box.x + box.width, y: box.y + box.height }
-          ];
-
-          const nearCorner = corners.some(corner =>
-            Math.abs(imageX - corner.x) < handleSize &&
-            Math.abs(imageY - corner.y) < handleSize
-          );
-
-          if (nearCorner) {
-            hoverBoxItem = item;
-            break;
-          }
-
-          // Check edges (with extended hitbox outside the box)
-          const inExtendedXRange = imageX >= box.x - edgeThreshold && imageX <= box.x + box.width + edgeThreshold;
-          const inExtendedYRange = imageY >= box.y - edgeThreshold && imageY <= box.y + box.height + edgeThreshold;
-
-          const nearEdge =
-            (inExtendedXRange && (Math.abs(imageY - box.y) < edgeThreshold || Math.abs(imageY - (box.y + box.height)) < edgeThreshold)) ||
-            (inExtendedYRange && (Math.abs(imageX - box.x) < edgeThreshold || Math.abs(imageX - (box.x + box.width)) < edgeThreshold));
-
-          if (nearEdge) {
-            hoverBoxItem = item;
-            break;
-          }
-        }
-
-        // If no corner/edge match, hover the topmost box
-        if (!hoverBoxItem) {
-          hoverBoxItem = allBoxesAtPoint[allBoxesAtPoint.length - 1];
-        }
-      }
-
-      renderer.setHoveredBox(hoverBoxItem ? hoverBoxItem.boxIndex : null);
-
-      // Visualize hitboxes for the hovered box
-      if (hoverBoxItem) {
-        const box = boxes[hoverBoxItem.boxIndex];
-        const handleSize = 30 / pixiRenderer.app.stage.scale.x;
-        const edgeThreshold = 15 / pixiRenderer.app.stage.scale.x;
-
-        // Calculate corner hitboxes (circles)
-        const corners = [
-          { x: box.x, y: box.y, size: handleSize },
-          { x: box.x + box.width, y: box.y, size: handleSize },
-          { x: box.x, y: box.y + box.height, size: handleSize },
-          { x: box.x + box.width, y: box.y + box.height, size: handleSize }
-        ];
-
-        // Calculate edge hitboxes (rectangles)
-        const edges = [
-          // Top edge
-          { x: box.x, y: box.y - edgeThreshold / 2, width: box.width, height: edgeThreshold },
-          // Bottom edge
-          { x: box.x, y: box.y + box.height - edgeThreshold / 2, width: box.width, height: edgeThreshold },
-          // Left edge
-          { x: box.x - edgeThreshold / 2, y: box.y, width: edgeThreshold, height: box.height },
-          // Right edge
-          { x: box.x + box.width - edgeThreshold / 2, y: box.y, width: edgeThreshold, height: box.height }
-        ];
-
-        pixiRenderer.setOverlayData({
-          showHitboxes: true,
-          hitboxes: { corners, edges }
-        });
-      } else {
-        pixiRenderer.setOverlayData({});
-      }
-
-      // Update cursor based on hover
-      if (hoverBoxItem && selectedBox === hoverBoxItem.boxIndex) {
-        const box = boxes[hoverBoxItem.boxIndex];
-        // Reuse pixiRenderer and stage from above (already declared)
-        const handleSize = 30 / stage.scale.x;
-        const edgeThreshold = 15 / stage.scale.x;
-
-        // Check corners
-        const corners = [
-          { name: 'nw', x: box.x, y: box.y, cursor: 'nwse-resize' },
-          { name: 'ne', x: box.x + box.width, y: box.y, cursor: 'nesw-resize' },
-          { name: 'sw', x: box.x, y: box.y + box.height, cursor: 'nesw-resize' },
-          { name: 'se', x: box.x + box.width, y: box.y + box.height, cursor: 'nwse-resize' }
-        ];
-
-        let foundCorner = false;
-        for (const corner of corners) {
-          if (Math.abs(imageX - corner.x) < handleSize && Math.abs(imageY - corner.y) < handleSize) {
-            setCursor(corner.cursor);
-            foundCorner = true;
-            break;
-          }
-        }
-
-        if (!foundCorner) {
-          // Check edges
-          const inXRange = imageX >= box.x && imageX <= box.x + box.width;
-          const inYRange = imageY >= box.y && imageY <= box.y + box.height;
-
-          if (inXRange && Math.abs(imageY - box.y) < edgeThreshold) {
-            setCursor('ns-resize');
-          } else if (inXRange && Math.abs(imageY - (box.y + box.height)) < edgeThreshold) {
-            setCursor('ns-resize');
-          } else if (inYRange && Math.abs(imageX - box.x) < edgeThreshold) {
-            setCursor('ew-resize');
-          } else if (inYRange && Math.abs(imageX - (box.x + box.width)) < edgeThreshold) {
-            setCursor('ew-resize');
-          } else {
-            setCursor('move');
-          }
-        }
-      } else if (hoverBoxItem) {
-        setCursor('pointer');
-      } else {
-        setCursor('default');
-      }
-    } else if (isDragging) {
-      setCursor('move');
-    } else if (isPanning) {
+    // Active operations take precedence
+    if (isPanning) {
       setCursor('grabbing');
+      return;
     }
+    if (isDragging) {
+      setCursor('move');
+      return;
+    }
+    if (isResizing) {
+      // Keep current resize cursor
+      return;
+    }
+    if (isDrawingBox) {
+      setCursor('crosshair');
+      return;
+    }
+    if (isDrawingStroke) {
+      setCursor('none'); // Hide cursor while drawing brush strokes
+      return;
+    }
+    if (isDrawingLine) {
+      setCursor('crosshair');
+      return;
+    }
+    if (zoomDragStart) {
+      setCursor('ew-resize'); // Horizontal drag cursor for zoom
+      return;
+    }
+    if (brushSizeDragStart !== null && brushSizeDragCenter) {
+      setCursor('default'); // Show normal cursor while resizing brush (circle is locked in place)
+      // Keep showing brush circle at locked position
+      if (pixiRenderer) {
+        pixiRenderer.setOverlayData({
+          brushStrokes: brushStrokes,
+          brushSize: brushBoxSize,
+          brushCursor: { x: brushSizeDragCenter.x, y: brushSizeDragCenter.y, size: brushBoxSize }
+        });
+      }
+      return;
+    }
+
+    // Tool-specific cursors
+    if (currentTool === 'box') {
+      setCursor('crosshair');
+      return;
+    }
+    if (isBrushBoxMode) {
+      setCursor('none'); // Custom brush cursor rendered by canvas
+      // Show brush cursor circle at mouse position
+      if (pixiRenderer && !isDrawingStroke) {
+        pixiRenderer.setOverlayData({
+          brushStrokes: brushStrokes,
+          brushSize: brushBoxSize,
+          brushCursor: { x: imageX, y: imageY, size: brushBoxSize }
+        });
+      }
+      return;
+    }
+    if (isZoomMode) {
+      setCursor('zoom-in');
+      return;
+    }
+    if (isSelectingAutoSolveRegion) {
+      setCursor('crosshair');
+      // Update overlay to show regions (even when not drawing)
+      if (pixiRenderer) {
+        pixiRenderer.setOverlayData({
+          autoSolveRegions: autoSolveRegions,
+          currentAutoSolveRegion: currentAutoSolveRegion
+        });
+      }
+      return;
+    }
+    if (currentTool === 'rotate') {
+      setCursor('crosshair');
+      return;
+    }
+    if (currentTool === 'baseline' || currentTool === 'angled') {
+      setCursor('crosshair');
+      return;
+    }
+
+    // Pointer mode: show hover cursors for boxes
+    if (currentTool === 'pointer') {
+      const handleSize = 30 / stage.scale.x;
+      const edgeThreshold = 15 / stage.scale.x;
+
+      // Helper functions for hover detection
+      const getCornerCursor = (box, px, py) => {
+        const corners = [
+          { x: box.x, y: box.y, cursor: 'nwse-resize' },
+          { x: box.x + box.width, y: box.y, cursor: 'nesw-resize' },
+          { x: box.x, y: box.y + box.height, cursor: 'nesw-resize' },
+          { x: box.x + box.width, y: box.y + box.height, cursor: 'nwse-resize' }
+        ];
+        for (const corner of corners) {
+          if (Math.abs(px - corner.x) < handleSize && Math.abs(py - corner.y) < handleSize) {
+            return corner.cursor;
+          }
+        }
+        return null;
+      };
+
+      const getEdgeCursor = (box, px, py) => {
+        const inExtendedXRange = px >= box.x - edgeThreshold && px <= box.x + box.width + edgeThreshold;
+        const inExtendedYRange = py >= box.y - edgeThreshold && py <= box.y + box.height + edgeThreshold;
+
+        if (inExtendedXRange && Math.abs(py - box.y) < edgeThreshold) return 'ns-resize';
+        if (inExtendedXRange && Math.abs(py - (box.y + box.height)) < edgeThreshold) return 'ns-resize';
+        if (inExtendedYRange && Math.abs(px - box.x) < edgeThreshold) return 'ew-resize';
+        if (inExtendedYRange && Math.abs(px - (box.x + box.width)) < edgeThreshold) return 'ew-resize';
+        return null;
+      };
+
+      const isPointInBox = (box, px, py) => {
+        return px >= box.x && px <= box.x + box.width &&
+               py >= box.y && py <= box.y + box.height;
+      };
+
+      // Check corners on all boxes (top to bottom)
+      for (let i = boxes.length - 1; i >= 0; i--) {
+        const box = boxes[i];
+        if (!box) continue;
+        const cornerCursor = getCornerCursor(box, imageX, imageY);
+        if (cornerCursor) {
+          setCursor(cornerCursor);
+          renderer.setHoveredBox(i);
+          return;
+        }
+      }
+
+      // Check edges on all boxes (top to bottom)
+      for (let i = boxes.length - 1; i >= 0; i--) {
+        const box = boxes[i];
+        if (!box) continue;
+        const edgeCursor = getEdgeCursor(box, imageX, imageY);
+        if (edgeCursor) {
+          setCursor(edgeCursor);
+          renderer.setHoveredBox(i);
+          return;
+        }
+      }
+
+      // Check body on all boxes (top to bottom)
+      for (let i = boxes.length - 1; i >= 0; i--) {
+        const box = boxes[i];
+        if (!box) continue;
+        if (isPointInBox(box, imageX, imageY)) {
+          setCursor('move');
+          renderer.setHoveredBox(i);
+          return;
+        }
+      }
+
+      // No box under cursor
+      renderer.setHoveredBox(null);
+      setCursor('default');
+      return;
+    }
+
+    // Default cursor
+    setCursor('default');
   };
 
   const handleMouseClick = (e) => {
@@ -560,8 +888,45 @@ export default function PixiCanvasTest() {
 
     // Handle brush tool
     if (isBrushBoxMode) {
+      // Shift+drag to resize brush
+      if (e.shiftKey) {
+        setBrushSizeDragStart(e.clientX);
+        setBrushSizeStartValue(brushBoxSize);
+        setBrushSizeDragCenter({ x: imageX, y: imageY }); // Lock the center position
+        // Immediately show brush cursor at locked position
+        if (pixiRenderer) {
+          pixiRenderer.setOverlayData({
+            brushStrokes: brushStrokes,
+            brushSize: brushBoxSize,
+            brushCursor: { x: imageX, y: imageY, size: brushBoxSize }
+          });
+        }
+        return;
+      }
       setIsDrawingStroke(true); // Start drawing a new stroke
       setCurrentStroke([{ x: imageX, y: imageY }]);
+      return;
+    }
+
+    // Handle zoom tool - drag to zoom
+    if (isZoomMode) {
+      const currentZoom = stage.scale.x;
+      setZoomDragStart({
+        clientX: e.clientX,
+        clientY: e.clientY,
+        imageX,
+        imageY,
+        panX: stage.position.x,
+        panY: stage.position.y
+      }, currentZoom);
+      return;
+    }
+
+    // Handle auto-solve region selection
+    if (isSelectingAutoSolveRegion) {
+      setIsDrawingRegion(true);
+      setRegionStart({ x: imageX, y: imageY });
+      setCurrentAutoSolveRegion({ x: imageX, y: imageY, width: 0, height: 0 });
       return;
     }
 
@@ -599,173 +964,95 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Find all boxes at this point for click-through selection
-    // Use tolerance of 30px to include corner/edge hitbox zones
+    // Pointer mode: check ALL boxes from top to bottom for interaction
+    // Priority: corners > edges > body (this allows selecting underlying boxes by their handles)
     const handleSize = 30 / stage.scale.x;
-    const allBoxesAtPoint = renderer.findAllBoxesAtPoint(x, y, handleSize);
+    const edgeThreshold = 15 / stage.scale.x;
 
-    // Smart selection: Prioritize boxes whose corners/edges are under the cursor
-    // This makes it easier to select underlying boxes by their corners/edges
-    let boxItem = null;
-    if (allBoxesAtPoint.length > 0) {
-      const edgeThreshold = 15 / stage.scale.x;
+    // Helper to check if point is inside box
+    const isPointInBox = (box, px, py) => {
+      return px >= box.x && px <= box.x + box.width &&
+             py >= box.y && py <= box.y + box.height;
+    };
 
-      // Check if cursor is near any box's corner or edge
-      for (const item of allBoxesAtPoint) {
-        const box = boxes[item.boxIndex];
-        if (!box) continue;
-
-        // Check corners
-        const corners = [
-          { x: box.x, y: box.y },
-          { x: box.x + box.width, y: box.y },
-          { x: box.x, y: box.y + box.height },
-          { x: box.x + box.width, y: box.y + box.height }
-        ];
-
-        const nearCorner = corners.some(corner =>
-          Math.abs(imageX - corner.x) < handleSize &&
-          Math.abs(imageY - corner.y) < handleSize
-        );
-
-        if (nearCorner) {
-          boxItem = item;
-          // Bring this box to front if it's not already selected
-          if (selectedBox !== item.boxIndex) {
-            bringBoxToFront(item.boxIndex);
-          }
-          break;
-        }
-
-        // Check edges (with extended hitbox outside the box)
-        const inExtendedXRange = imageX >= box.x - edgeThreshold && imageX <= box.x + box.width + edgeThreshold;
-        const inExtendedYRange = imageY >= box.y - edgeThreshold && imageY <= box.y + box.height + edgeThreshold;
-
-        const inXRange = imageX >= box.x && imageX <= box.x + box.width;
-        const inYRange = imageY >= box.y && imageY <= box.y + box.height;
-
-        const nearEdge =
-          (inExtendedXRange && (Math.abs(imageY - box.y) < edgeThreshold || Math.abs(imageY - (box.y + box.height)) < edgeThreshold)) ||
-          (inExtendedYRange && (Math.abs(imageX - box.x) < edgeThreshold || Math.abs(imageX - (box.x + box.width)) < edgeThreshold));
-
-        if (nearEdge) {
-          boxItem = item;
-          // Bring this box to front if it's not already selected
-          if (selectedBox !== item.boxIndex) {
-            bringBoxToFront(item.boxIndex);
-          }
-          break;
-        }
-      }
-
-      // If no corner/edge match, select the topmost box
-      if (!boxItem) {
-        boxItem = allBoxesAtPoint[allBoxesAtPoint.length - 1];
-      }
-    }
-
-    // Alt+Click: Cycle through overlapping boxes (like Figma, Sketch, etc.)
-    if (e.altKey && allBoxesAtPoint.length > 1) {
-      const currentIndex = allBoxesAtPoint.findIndex(b => b.boxIndex === selectedBox);
-      if (currentIndex !== -1) {
-        // Cycle to next box
-        const nextIndex = (currentIndex + 1) % allBoxesAtPoint.length;
-        setSelectedBox(allBoxesAtPoint[nextIndex].boxIndex);
-      } else {
-        // Select the topmost box
-        setSelectedBox(boxItem.boxIndex);
-      }
-      return;
-    }
-
-    if (boxItem) {
-      const box = boxes[boxItem.boxIndex];
-      const handleSize = 30 / stage.scale.x;
-      const edgeThreshold = 15 / stage.scale.x;
-
-      // Check if clicking on a corner or edge (works for both selected and unselected boxes)
-      // Check corners first (higher priority)
+    // Helper to get corner at point
+    const getCornerAtPoint = (box, px, py) => {
       const corners = [
         { name: 'nw', x: box.x, y: box.y },
         { name: 'ne', x: box.x + box.width, y: box.y },
         { name: 'sw', x: box.x, y: box.y + box.height },
         { name: 'se', x: box.x + box.width, y: box.y + box.height }
       ];
-
       for (const corner of corners) {
-        if (Math.abs(imageX - corner.x) < handleSize && Math.abs(imageY - corner.y) < handleSize) {
-          // Select box if not already selected, then start corner resize
-          if (selectedBox !== boxItem.boxIndex) {
-            setSelectedBox(boxItem.boxIndex);
-          }
-          setIsResizing(true);
-          setResizeCorner(corner.name);
-          setDragStart({ x: imageX, y: imageY });
-          setBoxStart({ ...box });
-          return;
+        if (Math.abs(px - corner.x) < handleSize && Math.abs(py - corner.y) < handleSize) {
+          return corner.name;
         }
       }
+      return null;
+    };
 
-      // Check edges (with extended hitbox outside the box)
-      const inExtendedXRange = imageX >= box.x - edgeThreshold && imageX <= box.x + box.width + edgeThreshold;
-      const inExtendedYRange = imageY >= box.y - edgeThreshold && imageY <= box.y + box.height + edgeThreshold;
+    // Helper to get edge at point
+    const getEdgeAtPoint = (box, px, py) => {
+      const inExtendedXRange = px >= box.x - edgeThreshold && px <= box.x + box.width + edgeThreshold;
+      const inExtendedYRange = py >= box.y - edgeThreshold && py <= box.y + box.height + edgeThreshold;
 
-      if (inExtendedXRange && Math.abs(imageY - box.y) < edgeThreshold) {
-        // Top edge
-        if (selectedBox !== boxItem.boxIndex) {
-          setSelectedBox(boxItem.boxIndex);
-        }
-        setIsResizing(true);
-        setResizeCorner('n');
-        setDragStart({ x: imageX, y: imageY });
-        setBoxStart({ ...box });
-        return;
-      }
-      if (inExtendedXRange && Math.abs(imageY - (box.y + box.height)) < edgeThreshold) {
-        // Bottom edge
-        if (selectedBox !== boxItem.boxIndex) {
-          setSelectedBox(boxItem.boxIndex);
-        }
-        setIsResizing(true);
-        setResizeCorner('s');
-        setDragStart({ x: imageX, y: imageY });
-        setBoxStart({ ...box });
-        return;
-      }
-      if (inExtendedYRange && Math.abs(imageX - box.x) < edgeThreshold) {
-        // Left edge
-        if (selectedBox !== boxItem.boxIndex) {
-          setSelectedBox(boxItem.boxIndex);
-        }
-        setIsResizing(true);
-        setResizeCorner('w');
-        setDragStart({ x: imageX, y: imageY });
-        setBoxStart({ ...box });
-        return;
-      }
-      if (inExtendedYRange && Math.abs(imageX - (box.x + box.width)) < edgeThreshold) {
-        // Right edge
-        if (selectedBox !== boxItem.boxIndex) {
-          setSelectedBox(boxItem.boxIndex);
-        }
-        setIsResizing(true);
-        setResizeCorner('e');
-        setDragStart({ x: imageX, y: imageY });
-        setBoxStart({ ...box });
-        return;
-      }
+      if (inExtendedXRange && Math.abs(py - box.y) < edgeThreshold) return 'n';
+      if (inExtendedXRange && Math.abs(py - (box.y + box.height)) < edgeThreshold) return 's';
+      if (inExtendedYRange && Math.abs(px - box.x) < edgeThreshold) return 'w';
+      if (inExtendedYRange && Math.abs(px - (box.x + box.width)) < edgeThreshold) return 'e';
+      return null;
+    };
 
-      // Clicking on body of box (not on corner/edge)
-      if (selectedBox === boxItem.boxIndex) {
-        // Already selected: start drag
+    // Pass 1: Check corners on ALL boxes (top to bottom)
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      const box = boxes[i];
+      if (!box) continue;
+
+      const corner = getCornerAtPoint(box, imageX, imageY);
+      if (corner) {
+        setSelectedBox(i);
+        bringBoxToFront(i);
+        setIsResizing(true);
+        setResizeCorner(corner);
+        setDragStart({ x: imageX, y: imageY });
+        setBoxStart({ ...box });
+        return;
+      }
+    }
+
+    // Pass 2: Check edges on ALL boxes (top to bottom)
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      const box = boxes[i];
+      if (!box) continue;
+
+      const edge = getEdgeAtPoint(box, imageX, imageY);
+      if (edge) {
+        setSelectedBox(i);
+        bringBoxToFront(i);
+        setIsResizing(true);
+        setResizeCorner(edge);
+        setDragStart({ x: imageX, y: imageY });
+        setBoxStart({ ...box });
+        return;
+      }
+    }
+
+    // Pass 3: Check body (inside) on ALL boxes (top to bottom)
+    for (let i = boxes.length - 1; i >= 0; i--) {
+      const box = boxes[i];
+      if (!box) continue;
+
+      if (isPointInBox(box, imageX, imageY)) {
+        setSelectedBox(i);
         setIsDragging(true);
         setDragStart({ x: imageX, y: imageY });
         setBoxStart({ ...box });
-      } else {
-        // Not selected: just select it
-        setSelectedBox(boxItem.boxIndex);
+        return;
       }
     }
+
+    // Clicking on empty space deselects
+    setSelectedBox(null);
   };
 
   const handleMouseUp = () => {
@@ -815,6 +1102,12 @@ export default function PixiCanvasTest() {
         pixiRenderer.setOverlayData({});
       }
 
+      return;
+    }
+
+    // Handle zoom tool drag end
+    if (isZoomMode && zoomDragStart) {
+      clearZoomDrag();
       return;
     }
 
@@ -994,6 +1287,34 @@ export default function PixiCanvasTest() {
       return;
     }
 
+    // Finish brush size drag
+    if (brushSizeDragStart !== null) {
+      setBrushSizeDragStart(null);
+      setBrushSizeDragCenter(null);
+      return;
+    }
+
+    // Finish auto-solve region drawing
+    if (isDrawingRegion && currentAutoSolveRegion) {
+      // Only add region if it has some size
+      if (currentAutoSolveRegion.width > 10 && currentAutoSolveRegion.height > 10) {
+        addAutoSolveRegion({ ...currentAutoSolveRegion });
+        console.log(`✅ Region ${autoSolveRegions.length + 1} added:`, currentAutoSolveRegion);
+      }
+      setIsDrawingRegion(false);
+      setRegionStart(null);
+
+      // Update overlay to show all regions
+      const pixiRenderer = renderer.getRenderer();
+      if (pixiRenderer) {
+        pixiRenderer.setOverlayData({
+          autoSolveRegions: [...autoSolveRegions, currentAutoSolveRegion],
+          currentAutoSolveRegion: null
+        });
+      }
+      return;
+    }
+
     // Finish current brush stroke
     if (isDrawingStroke && currentStroke.length > 2) {
       // Add completed stroke to store
@@ -1059,7 +1380,17 @@ export default function PixiCanvasTest() {
     const deltaY = e.clientY - panStart.y;
 
     const currentPan = pixiRenderer.app.stage.position;
-    renderer.setPan(currentPan.x + deltaX, currentPan.y + deltaY);
+    const newPanX = currentPan.x + deltaX;
+    const newPanY = currentPan.y + deltaY;
+
+    renderer.setPan(newPanX, newPanY);
+
+    // Sync to Zustand store
+    isUpdatingFromRenderer.current = true;
+    setPanOffset({ x: newPanX, y: newPanY });
+    requestAnimationFrame(() => {
+      isUpdatingFromRenderer.current = false;
+    });
 
     setPanStart({ x: e.clientX, y: e.clientY });
   };
@@ -1075,8 +1406,8 @@ export default function PixiCanvasTest() {
 
     // Detect if this is likely a mouse wheel vs trackpad
     // Key differences:
-    // - Mouse wheels: deltaMode 1 (line), or deltaMode 0 with discrete integer steps, no deltaX
-    // - Trackpads: deltaMode 0 with smooth/fractional deltas, often have deltaX
+    // - Mouse wheels: deltaMode 1 (line), or larger discrete jumps with minimal deltaX
+    // - Trackpads: smooth small deltas, often with deltaX for diagonal scrolling
     // - Trackpad pinch: sends ctrlKey = true
 
     // Trackpad pinch gestures send wheel events with ctrlKey set to true
@@ -1085,14 +1416,16 @@ export default function PixiCanvasTest() {
     // Mouse wheels use deltaMode 1 (DOM_DELTA_LINE)
     const isLineMode = e.deltaMode === 1;
 
-    // In pixel mode (deltaMode 0), mouse wheels have:
-    // - No horizontal movement (deltaX === 0)
-    // - Integer deltaY values (trackpads often have fractional)
-    const isDiscreteScroll = e.deltaMode === 0 &&
-      e.deltaX === 0 &&
-      Number.isInteger(e.deltaY);
+    // Mouse wheel heuristics for deltaMode 0:
+    // - No/minimal horizontal movement (trackpad diagonal scroll has significant deltaX)
+    // - Larger discrete jumps (mouse wheels typically send bigger deltas)
+    const absDeltaX = Math.abs(e.deltaX);
+    const absDeltaY = Math.abs(e.deltaY);
+    const hasMinimalHorizontal = absDeltaX < 1;
+    const hasSignificantVertical = absDeltaY > 1;
+    const isMouseWheelHeuristic = hasMinimalHorizontal && hasSignificantVertical;
 
-    const isMouseWheel = isLineMode || isDiscreteScroll;
+    const isMouseWheel = isLineMode || isMouseWheelHeuristic;
 
     // Mouse wheel should always zoom, trackpad pinch should zoom, trackpad scroll should pan
     const shouldZoom = isPinchZoom || isMouseWheel;
@@ -1122,8 +1455,18 @@ export default function PixiCanvasTest() {
       stage.scale.set(newZoom, newZoom);
 
       // Adjust position to keep mouse point stable
-      stage.position.x = mouseX - worldX * newZoom;
-      stage.position.y = mouseY - worldY * newZoom;
+      const newPanX = mouseX - worldX * newZoom;
+      const newPanY = mouseY - worldY * newZoom;
+      stage.position.x = newPanX;
+      stage.position.y = newPanY;
+
+      // Sync to Zustand store (mark as updating from renderer to prevent feedback loop)
+      isUpdatingFromRenderer.current = true;
+      setZoomLevel(newZoom);
+      setPanOffset({ x: newPanX, y: newPanY });
+      requestAnimationFrame(() => {
+        isUpdatingFromRenderer.current = false;
+      });
 
       // Force immediate render
       pixiRenderer.needsRender = true;
@@ -1132,12 +1475,19 @@ export default function PixiCanvasTest() {
       const panMultiplier = 1.5;
       const currentPan = stage.position;
 
-      renderer.setPan(
-        currentPan.x - e.deltaX * panMultiplier,
-        currentPan.y - e.deltaY * panMultiplier
-      );
+      const newPanX = currentPan.x - e.deltaX * panMultiplier;
+      const newPanY = currentPan.y - e.deltaY * panMultiplier;
+
+      renderer.setPan(newPanX, newPanY);
+
+      // Sync to Zustand store
+      isUpdatingFromRenderer.current = true;
+      setPanOffset({ x: newPanX, y: newPanY });
+      requestAnimationFrame(() => {
+        isUpdatingFromRenderer.current = false;
+      });
     }
-  }, [renderer]);
+  }, [renderer, setZoomLevel, setPanOffset]);
 
   if (!image) {
     return (
@@ -1160,29 +1510,22 @@ export default function PixiCanvasTest() {
       <ToolPalette />
       <RightModePanel />
 
-      {/* Performance Stats */}
+      {/* Performance Stats - compact version */}
       {renderer.isReady && perfStats && (
         <div style={{
           position: 'absolute',
-          bottom: '12px',
-          left: '12px',
+          bottom: '8px',
+          left: '8px',
           zIndex: 100,
-          background: 'rgba(0, 0, 0, 0.85)',
-          color: 'white',
-          padding: '10px 14px',
-          borderRadius: '8px',
-          fontSize: '11px',
+          background: 'rgba(0, 0, 0, 0.6)',
+          color: 'rgba(255, 255, 255, 0.8)',
+          padding: '4px 8px',
+          borderRadius: '4px',
+          fontSize: '9px',
           fontFamily: 'Monaco, monospace',
-          backdropFilter: 'blur(10px)',
-          lineHeight: '1.6'
+          lineHeight: '1.4'
         }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#4ade80' }}>
-            ⚡ WebGL Renderer
-          </div>
-          <div>📦 Boxes: {perfStats.visibleBoxes} / {perfStats.totalBoxes}</div>
-          <div>🗺️ Tiles: {perfStats.tiles}</div>
-          <div>🔍 Zoom: {perfStats.zoom}</div>
-          <div>💾 Memory: {perfStats.memory}</div>
+          <span style={{ color: '#4ade80' }}>WebGL</span> {perfStats.zoom} • {perfStats.visibleBoxes}/{perfStats.totalBoxes} boxes
         </div>
       )}
 
