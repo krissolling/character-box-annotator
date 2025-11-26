@@ -20,6 +20,8 @@ export default function CharacterPicker() {
   const textPositionVariants = useAnnotatorStore((state) => state.textPositionVariants);
   const clearAllPositionVariantsForChar = useAnnotatorStore((state) => state.clearAllPositionVariantsForChar);
   const getVariantsForChar = useAnnotatorStore((state) => state.getVariantsForChar);
+  const caseSensitive = useAnnotatorStore((state) => state.caseSensitive);
+  const setCaseSensitive = useAnnotatorStore((state) => state.setCaseSensitive);
 
   // Mode cancel functions to properly switch to box tool
   const cancelBrushBox = useAnnotatorStore((state) => state.cancelBrushBox);
@@ -123,35 +125,10 @@ export default function CharacterPicker() {
 
   return (
     <div
-      style={{ position: 'relative', display: 'inline-block', paddingRight: '40px', marginRight: '-40px' }}
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '12px' }}
       onMouseEnter={() => setPanelHovered(true)}
       onMouseLeave={() => setPanelHovered(false)}
     >
-      {/* Edit button - outside panel, show on hover */}
-      {panelHovered && (
-        <button
-          onClick={handleEditString}
-          style={{
-            position: 'absolute',
-            top: '50%',
-            right: '4px',
-            transform: 'translateY(-50%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--te-gray-panel)',
-            border: '1px solid var(--te-gray-mid)',
-            borderRadius: 'var(--radius-sm)',
-            boxShadow: 'var(--shadow-inner)',
-            cursor: 'pointer',
-            padding: '6px'
-          }}
-          title="Edit string"
-        >
-          <Edit2 style={{ width: '12px', height: '12px', color: 'var(--te-black)' }} />
-        </button>
-      )}
-
       <div className="te-panel" style={{ padding: '8px' }}>
 
       {/* Horizontal character boxes */}
@@ -365,6 +342,54 @@ export default function CharacterPicker() {
 
       </div>
       </div>
+
+      {/* Case sensitivity toggle */}
+      <button
+        onClick={() => setCaseSensitive(!caseSensitive)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: caseSensitive ? 'var(--te-blue)' : 'var(--te-gray-panel)',
+          border: `1px solid ${caseSensitive ? 'var(--te-blue)' : 'var(--te-gray-mid)'}`,
+          borderRadius: 'var(--radius-sm)',
+          boxShadow: 'var(--shadow-inner)',
+          cursor: 'pointer',
+          padding: '6px 8px',
+          transition: 'all 0.15s'
+        }}
+        title={caseSensitive ? 'Case sensitive (click to allow substitution)' : 'Case insensitive (A can substitute for a)'}
+      >
+        <span style={{
+          fontSize: '14px',
+          fontVariationSettings: "'wght' 600",
+          color: caseSensitive ? 'var(--te-white)' : 'var(--te-gray-dark)',
+          lineHeight: 1
+        }}>
+          Aa
+        </span>
+      </button>
+
+      {/* Edit button - show on hover */}
+      {panelHovered && (
+        <button
+          onClick={handleEditString}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'var(--te-gray-panel)',
+            border: '1px solid var(--te-gray-mid)',
+            borderRadius: 'var(--radius-sm)',
+            boxShadow: 'var(--shadow-inner)',
+            cursor: 'pointer',
+            padding: '6px'
+          }}
+          title="Edit string"
+        >
+          <Edit2 style={{ width: '12px', height: '12px', color: 'var(--te-black)' }} />
+        </button>
+      )}
     </div>
   );
 }

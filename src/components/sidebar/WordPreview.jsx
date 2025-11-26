@@ -12,6 +12,8 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
   const [draggingKerningIndex, setDraggingKerningIndex] = useState(null);
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartKerning, setDragStartKerning] = useState(0);
+  const [previewKerning, setPreviewKerning] = useState(null); // { index, value } during drag
+  const previewKerningRef = useRef(null); // Ref to track current preview for mouseup handler
   const [handleRenderTrigger, setHandleRenderTrigger] = useState(0);
   const [hoveredCharPosition, setHoveredCharPosition] = useState(null);
   const [variantPickerOpen, setVariantPickerOpen] = useState(false);
@@ -29,6 +31,7 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
   const text = useAnnotatorStore((state) => state.text);
   const baselines = useAnnotatorStore((state) => state.baselines);
   const angledBaselines = useAnnotatorStore((state) => state.angledBaselines);
+  const isDraggingBaseline = useAnnotatorStore((state) => state.isDraggingBaseline);
   const openCharacterEdit = useAnnotatorStore((state) => state.openCharacterEdit);
   const editedCharData = useAnnotatorStore((state) => state.editedCharData);
   const imageRotation = useAnnotatorStore((state) => state.imageRotation);
@@ -41,6 +44,7 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
   const setPositionVariant = useAnnotatorStore((state) => state.setPositionVariant);
   const clearPositionVariant = useAnnotatorStore((state) => state.clearPositionVariant);
   const uniqueChars = useAnnotatorStore((state) => state.uniqueChars);
+  const caseSensitive = useAnnotatorStore((state) => state.caseSensitive);
 
   // Render a character box thumbnail to canvas (similar to CharacterPicker)
   const renderCharacterThumbnail = (canvasElement, box) => {
@@ -280,12 +284,15 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     }
   };
 
-  // Kerning handle drag handlers
+  // Kerning handle drag handlers - uses preview state during drag for performance
   const handleKerningMouseDown = (e, index) => {
     e.stopPropagation();
     setDraggingKerningIndex(index);
     setDragStartX(e.clientX);
     setDragStartKerning(kerningAdjustments[index] || 0);
+    const initial = { index, value: kerningAdjustments[index] || 0 };
+    setPreviewKerning(initial);
+    previewKerningRef.current = initial;
   };
 
   const handleKerningMouseMove = (e) => {
@@ -314,11 +321,20 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     const deltaXInCanvasUnits = deltaX * scale;
     const newKerning = Math.round(dragStartKerning + deltaXInCanvasUnits);
 
-    updateKerning(draggingKerningIndex, newKerning);
+    // Use preview state during drag instead of updating store
+    const preview = { index: draggingKerningIndex, value: newKerning };
+    setPreviewKerning(preview);
+    previewKerningRef.current = preview; // Keep ref in sync for mouseup handler
   };
 
   const handleKerningMouseUp = () => {
+    // Commit to store only on mouse up - use ref to get current value
+    if (previewKerningRef.current !== null) {
+      updateKerning(previewKerningRef.current.index, previewKerningRef.current.value);
+    }
     setDraggingKerningIndex(null);
+    setPreviewKerning(null);
+    previewKerningRef.current = null;
   };
 
   // Variant picker handlers
@@ -492,7 +508,7 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     renderCanvas();
     // Trigger re-render of kerning handles after canvas is rendered
     setHandleRenderTrigger(prev => prev + 1);
-  }, [image, boxes, letterSpacing, charPadding, kerningAdjustments, baselines, angledBaselines, editedCharData, imageRotation, imageFilters, levelsAdjustment, debugClickAreas, lastClickPos, text, selectedVariants, textPositionVariants, uniqueChars]);
+  }, [image, boxes, letterSpacing, charPadding, kerningAdjustments, previewKerning, baselines, angledBaselines, editedCharData, imageRotation, imageFilters, levelsAdjustment, debugClickAreas, lastClickPos, text, selectedVariants, textPositionVariants, uniqueChars, caseSensitive]);
 
   // Apply advanced color adjustments (shadows/highlights) to canvas
   const applyAdvancedAdjustments = (ctx, width, height) => {
@@ -544,6 +560,17 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     // Allow rendering with no boxes - will show placeholders for all characters
     if (!text || text.length === 0) return;
 
+    console.time('⏱️ renderCanvas');
+    console.log(`🎨 renderCanvas called for text: "${text}" (${text.length} chars, ${boxes.length} boxes)`);
+
+    // Helper to get effective kerning (preview during drag, store value otherwise)
+    const getKerning = (index) => {
+      if (previewKerning && previewKerning.index === index) {
+        return previewKerning.value;
+      }
+      return kerningAdjustments[index] || 0;
+    };
+
     // Use rotated image if available, otherwise use original
     const sourceImage = rotatedImageRef.current || image;
 
@@ -557,8 +584,17 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     const textChars = text.split('');
     const displayBoxes = textChars.map((char, position) => {
       // Find the charIndex for this character
-      const charIndex = uniqueChars.indexOf(char);
-      if (charIndex === -1) return { char, box: undefined, position }; // Unknown character
+      let charIndex = uniqueChars.indexOf(char);
+      let usedSubstitute = false;
+      const oppositeCase = char === char.toUpperCase() ? char.toLowerCase() : char.toUpperCase();
+
+      // If not found and case-insensitive mode, try opposite case in uniqueChars
+      if (charIndex === -1 && !caseSensitive) {
+        charIndex = uniqueChars.indexOf(oppositeCase);
+        if (charIndex !== -1) {
+          usedSubstitute = true;
+        }
+      }
 
       // Check for per-position override first, then fall back to global selected variant
       const selectedVariantId = textPositionVariants[position] !== undefined
@@ -566,9 +602,24 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
         : (selectedVariants[charIndex] || 0);
 
       // Find the box with matching charIndex and variantId
-      const box = boxes.find(box => box.charIndex === charIndex && box.variantId === selectedVariantId);
+      let box = charIndex !== -1
+        ? boxes.find(box => box.charIndex === charIndex && box.variantId === selectedVariantId)
+        : undefined;
 
-      return { char, box, position }; // Return char, box, and position
+      // Case-insensitive fallback: if no box found, search by character directly (including orphaned boxes)
+      if (!box && !caseSensitive) {
+        // First try exact char match (for orphaned boxes with this char)
+        box = boxes.find(b => b.char === char && (b.variantId === 0 || b.variantId === undefined));
+        // Then try opposite case
+        if (!box) {
+          box = boxes.find(b => b.char === oppositeCase && (b.variantId === 0 || b.variantId === undefined));
+          if (box) usedSubstitute = true;
+        }
+      }
+
+      if (charIndex === -1 && !box) return { char, box: undefined, position }; // Unknown character, no substitute found
+
+      return { char, box, position, usedSubstitute }; // Return char, box, position, and whether substitute was used
     });
 
     // Clear character positions for click detection
@@ -626,9 +677,8 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
       totalWidth += boxWidth;
       if (index < displayBoxes.length - 1) {
         totalWidth += letterSpacing;
-        // Add per-pair kerning
-        const kerning = kerningAdjustments[index] || 0;
-        totalWidth += kerning;
+        // Add per-pair kerning (uses preview during drag)
+        totalWidth += getKerning(index);
       }
 
       maxHeight = Math.max(maxHeight, boxHeight);
@@ -821,7 +871,6 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
             filters.push(`contrast(${imageFilters.contrast}%)`);
           }
           const filterString = filters.join(' ') || 'none';
-          console.log('WordPreview filters:', { imageFilters, filters, filterString });
           ctx.filter = filterString;
 
           // Find original box index
@@ -836,8 +885,6 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
 
         // Apply filters to temp canvas (same as main canvas)
         tempCtx.filter = ctx.filter;
-        console.log('tempCtx.filter before drawImage:', tempCtx.filter);
-        console.log('sourceImage type:', sourceImage instanceof HTMLCanvasElement ? 'Canvas' : 'Image');
 
         // Draw the character to temp canvas
         tempCtx.drawImage(
@@ -846,12 +893,10 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
           charPadding, charPadding, box.width, box.height
         );
 
-        // Sample a pixel to verify filter was applied
-        const testPixel = tempCtx.getImageData(charPadding + 1, charPadding + 1, 1, 1).data;
-        console.log('Pixel after filter draw:', testPixel);
-
         // Apply brush mask if it exists (for clipping)
         if (box.brushMask && box.brushMask.length > 0) {
+          const totalPoints = box.brushMask.reduce((sum, stroke) => sum + stroke.points.length, 0);
+          console.log(`🖌️ Brush mask for "${box.char}": ${box.brushMask.length} strokes, ${totalPoints} total points`);
           // Create mask using offscreen canvas to properly handle stroke width
           const maskCanvas = document.createElement('canvas');
           maskCanvas.width = boxWidth;
@@ -985,15 +1030,16 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
       // Move to next position
       currentX += boxWidth + letterSpacing;
 
-      // Add per-pair kerning
+      // Add per-pair kerning (uses preview during drag)
       if (index < displayBoxes.length - 1) {
-        const kerning = kerningAdjustments[index] || 0;
-        currentX += kerning;
+        currentX += getKerning(index);
       }
     });
 
     // Apply Photoshop-style Levels adjustment if set
-    if (levelsAdjustment) {
+    // Skip during interactive drags for performance - will apply on mouse up
+    const isInteractiveDrag = previewKerning !== null || isDraggingBaseline;
+    if (levelsAdjustment && !isInteractiveDrag) {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
       const { shadowInput, highlightInput, midtones, gammaCorrection, outShadow, outHighlight, crushThreshold } = levelsAdjustment;
@@ -1040,8 +1086,10 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     }
 
     // Apply shadows/highlights adjustments after all characters are drawn
-    // Use actual canvas dimensions (scaled by DPR)
-    applyAdvancedAdjustments(ctx, canvas.width, canvas.height);
+    // Skip during interactive drags for performance - will apply on mouse up
+    if (!isInteractiveDrag) {
+      applyAdvancedAdjustments(ctx, canvas.width, canvas.height);
+    }
 
     // DEBUG: Draw clickable areas if debug mode is enabled
     if (debugClickAreas) {
@@ -1091,6 +1139,7 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
         ctx.stroke();
       }
     }
+    console.timeEnd('⏱️ renderCanvas');
   };
 
   // Show empty state only if no image OR no text string
@@ -1192,7 +1241,7 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
                 zIndex: 10,
                 pointerEvents: 'auto'
               }}
-              title={`Adjust kerning (current: ${kerningAdjustments[handle.index] || 0}px)`}
+              title={`Adjust kerning (current: ${previewKerning?.index === handle.index ? previewKerning.value : (kerningAdjustments[handle.index] || 0)}px)`}
             >
               <div
                 style={{

@@ -47,6 +47,16 @@ export default function ToolPalette() {
   };
 
   const handleToolClick = (tool) => {
+    // Helper to cancel all modes except the one being activated
+    const cancelOtherModes = (except) => {
+      if (except !== 'autosolve') cancelAutoSolve();
+      if (except !== 'brush') cancelBrushBox();
+      if (except !== 'rotate') cancelRotation();
+      if (except !== 'baseline') cancelBaseline();
+      if (except !== 'angled') cancelAngledBaseline();
+      if (except !== 'zoom') cancelZoom();
+    };
+
     if (tool.value === 'autosolve') {
       if (!text || text.length === 0) {
         alert('Please write a string first before using auto-solve.');
@@ -56,6 +66,7 @@ export default function ToolPalette() {
         alert('Please upload an image first.');
         return;
       }
+      cancelOtherModes('autosolve');
       startAutoSolveRegionSelection();
     } else if (tool.value === 'brush') {
       if (!text || text.length === 0) {
@@ -66,6 +77,7 @@ export default function ToolPalette() {
         alert('Please upload an image first.');
         return;
       }
+      cancelOtherModes('brush');
       // If no character selected, select first available (or -1 if all done)
       if (currentCharIndex === -1 || currentCharIndex >= uniqueChars.length) {
         const firstAvailable = findFirstAvailableChar();
@@ -77,6 +89,7 @@ export default function ToolPalette() {
         alert('Please upload an image first.');
         return;
       }
+      cancelOtherModes('rotate');
       if (!isRotationMode) {
         startRotationMode();
       }
@@ -85,6 +98,7 @@ export default function ToolPalette() {
         alert('Please upload an image first.');
         return;
       }
+      cancelOtherModes('baseline');
       if (!isBaselineMode) {
         startBaselineMode();
       }
@@ -93,6 +107,7 @@ export default function ToolPalette() {
         alert('Please upload an image first.');
         return;
       }
+      cancelOtherModes('angled');
       if (!isAngledBaselineMode) {
         startAngledBaselineMode();
       }
@@ -101,17 +116,13 @@ export default function ToolPalette() {
         alert('Please upload an image first.');
         return;
       }
+      cancelOtherModes('zoom');
       if (!isZoomMode) {
         startZoomMode();
       }
     } else {
       // For box tool and pointer, explicitly clear all modes
-      cancelAutoSolve();
-      cancelBrushBox();
-      cancelRotation();
-      cancelBaseline();
-      cancelAngledBaseline();
-      cancelZoom();
+      cancelOtherModes(null);
 
       // If switching to box mode, select character
       if (tool.value === 'box') {
@@ -131,7 +142,7 @@ export default function ToolPalette() {
     { id: 'brush', icon: Paintbrush, label: 'Brush', value: 'brush', shortcut: 'B' },
     { id: 'auto-solve', icon: Zap, label: 'Auto-Solve', value: 'autosolve' },
     { id: 'baseline', icon: Minus, label: 'Baseline', value: 'baseline' },
-    { id: 'angled', icon: Slash, label: 'Angled', value: 'angled' },
+    // { id: 'angled', icon: Slash, label: 'Angled', value: 'angled' }, // Hidden for now
     { id: 'rotate', icon: RotateCw, label: 'Rotate', value: 'rotate' },
   ];
 

@@ -21,6 +21,7 @@ export default function PixiCanvasTest() {
   // Tool states
   const currentTool = useAnnotatorStore(state => state.currentTool);
   const currentCharIndex = useAnnotatorStore(state => state.currentCharIndex);
+  const setCurrentCharIndex = useAnnotatorStore(state => state.setCurrentCharIndex);
   const text = useAnnotatorStore(state => state.text);
   const isBrushBoxMode = useAnnotatorStore(state => state.isBrushBoxMode);
   const brushBoxSize = useAnnotatorStore(state => state.brushBoxSize);
@@ -30,6 +31,9 @@ export default function PixiCanvasTest() {
   const angledBaselines = useAnnotatorStore(state => state.angledBaselines);
   const addBaseline = useAnnotatorStore(state => state.addBaseline);
   const addAngledBaseline = useAnnotatorStore(state => state.addAngledBaseline);
+  const updateBaseline = useAnnotatorStore(state => state.updateBaseline);
+  const updateAngledBaseline = useAnnotatorStore(state => state.updateAngledBaseline);
+  const setIsDraggingBaseline = useAnnotatorStore(state => state.setIsDraggingBaseline);
   const confirmRotation = useAnnotatorStore(state => state.confirmRotation);
   const imageRotation = useAnnotatorStore(state => state.imageRotation);
   const tempBaselineY = useAnnotatorStore(state => state.tempBaselineY);
@@ -116,13 +120,33 @@ export default function PixiCanvasTest() {
   }, [renderer.isReady, image, fitToView]);
 
   // Update boxes when they change
+  const caseSensitive = useAnnotatorStore(state => state.caseSensitive);
+
   useEffect(() => {
     if (!renderer.isReady) return;
 
-    const validBoxes = boxes.filter(box => uniqueChars.includes(box.char));
-    console.log(`📦 Updating ${validBoxes.length} boxes`);
-    renderer.setBoxes(validBoxes);
-  }, [renderer.isReady, boxes, uniqueChars]);
+    // Filter to valid boxes but preserve original indices
+    // Respect case sensitivity setting
+    const validBoxesWithIndices = boxes
+      .map((box, originalIndex) => ({ ...box, originalIndex }))
+      .filter(box => {
+        if (caseSensitive) {
+          return uniqueChars.includes(box.char);
+        } else {
+          // Case-insensitive: check if any uniqueChar matches ignoring case
+          return uniqueChars.some(uc => uc.toLowerCase() === box.char.toLowerCase());
+        }
+      });
+    console.log(`📦 Updating ${validBoxesWithIndices.length} boxes (total: ${boxes.length}, uniqueChars: ${uniqueChars.join('')}, caseSensitive: ${caseSensitive})`);
+    if (boxes.length !== validBoxesWithIndices.length) {
+      const filtered = boxes.filter(b => {
+        if (caseSensitive) return !uniqueChars.includes(b.char);
+        return !uniqueChars.some(uc => uc.toLowerCase() === b.char.toLowerCase());
+      });
+      console.log('📦 Filtered out boxes:', filtered.map(b => b.char));
+    }
+    renderer.setBoxes(validBoxesWithIndices);
+  }, [renderer.isReady, boxes, uniqueChars, caseSensitive]);
 
   // Sync selected box to renderer
   useEffect(() => {
@@ -216,6 +240,10 @@ export default function PixiCanvasTest() {
   const [isDrawingLine, setIsDrawingLine] = useState(false);
   const [lineStart, setLineStart] = useState(null);
   const [lineEnd, setLineEnd] = useState(null);
+
+  // Baseline dragging state
+  const [draggingBaseline, setDraggingBaseline] = useState(null); // { id, type: 'horizontal' | 'angled', startY }
+  const [baselineDragStartY, setBaselineDragStartY] = useState(null);
 
   // Auto-solve region drawing state
   const [isDrawingRegion, setIsDrawingRegion] = useState(false);
@@ -411,7 +439,22 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Handle baseline tool dragging
+    // Handle dragging existing baseline
+    if (draggingBaseline && baselineDragStartY !== null) {
+      const deltaY = imageY - baselineDragStartY;
+
+      if (draggingBaseline.type === 'horizontal') {
+        const newY = draggingBaseline.originalY + deltaY;
+        updateBaseline(draggingBaseline.id, newY);
+      } else if (draggingBaseline.type === 'angled') {
+        const newStartY = draggingBaseline.originalStartY + deltaY;
+        const newEndY = draggingBaseline.originalEndY + deltaY;
+        updateAngledBaseline(draggingBaseline.id, newStartY, newEndY);
+      }
+      return;
+    }
+
+    // Handle baseline tool dragging (new baseline)
     if (currentTool === 'baseline' && isDrawingLine) {
       setTempBaselineY(imageY);
 
@@ -670,6 +713,10 @@ export default function PixiCanvasTest() {
       setCursor('crosshair');
       return;
     }
+    if (draggingBaseline) {
+      setCursor('ns-resize');
+      return;
+    }
     if (zoomDragStart) {
       setCursor('ew-resize'); // Horizontal drag cursor for zoom
       return;
@@ -723,8 +770,30 @@ export default function PixiCanvasTest() {
       setCursor('crosshair');
       return;
     }
-    if (currentTool === 'baseline' || currentTool === 'angled') {
-      setCursor('crosshair');
+    if (currentTool === 'baseline') {
+      // Check if hovering near an existing baseline
+      const BASELINE_HIT_THRESHOLD = 15;
+      const nearbyBaseline = baselines.find(b => Math.abs(b.y - imageY) < BASELINE_HIT_THRESHOLD);
+      if (nearbyBaseline) {
+        setCursor('ns-resize'); // Show resize cursor when near existing baseline
+      } else {
+        setCursor('crosshair');
+      }
+      return;
+    }
+    if (currentTool === 'angled') {
+      // Check if hovering near an existing angled baseline
+      const BASELINE_HIT_THRESHOLD = 15;
+      const nearbyAngledBaseline = angledBaselines.find(b => {
+        const slope = (b.endY - b.startY) / (b.endX - b.startX);
+        const baselineYAtX = b.startY + slope * (imageX - b.startX);
+        return Math.abs(baselineYAtX - imageY) < BASELINE_HIT_THRESHOLD;
+      });
+      if (nearbyAngledBaseline) {
+        setCursor('ns-resize'); // Show resize cursor when near existing baseline
+      } else {
+        setCursor('crosshair');
+      }
       return;
     }
 
@@ -922,8 +991,8 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Handle auto-solve region selection
-    if (isSelectingAutoSolveRegion) {
+    // Handle auto-solve region selection - only allow one region at a time
+    if (isSelectingAutoSolveRegion && autoSolveRegions.length === 0) {
       setIsDrawingRegion(true);
       setRegionStart({ x: imageX, y: imageY });
       setCurrentAutoSolveRegion({ x: imageX, y: imageY, width: 0, height: 0 });
@@ -932,6 +1001,19 @@ export default function PixiCanvasTest() {
 
     // Handle baseline tool (click-drag-release)
     if (currentTool === 'baseline') {
+      // Check if clicking near an existing horizontal baseline to drag it
+      const BASELINE_HIT_THRESHOLD = 15; // pixels
+      const nearbyBaseline = baselines.find(b => Math.abs(b.y - imageY) < BASELINE_HIT_THRESHOLD);
+
+      if (nearbyBaseline) {
+        // Start dragging existing baseline
+        setDraggingBaseline({ id: nearbyBaseline.id, type: 'horizontal', originalY: nearbyBaseline.y });
+        setBaselineDragStartY(imageY);
+        setIsDraggingBaseline(true);
+        return;
+      }
+
+      // No nearby baseline - create new one
       setIsDrawingLine(true);
       setTempBaselineY(imageY);
       return;
@@ -939,6 +1021,24 @@ export default function PixiCanvasTest() {
 
     // Handle angled baseline tool
     if (currentTool === 'angled') {
+      // Check if clicking near an existing angled baseline to drag it
+      const BASELINE_HIT_THRESHOLD = 15;
+      const nearbyAngledBaseline = angledBaselines.find(b => {
+        // Check distance from click point to the baseline line
+        // For simplicity, check if Y is near the baseline at this X position
+        const slope = (b.endY - b.startY) / (b.endX - b.startX);
+        const baselineYAtX = b.startY + slope * (imageX - b.startX);
+        return Math.abs(baselineYAtX - imageY) < BASELINE_HIT_THRESHOLD;
+      });
+
+      if (nearbyAngledBaseline) {
+        // Start dragging existing angled baseline
+        setDraggingBaseline({ id: nearbyAngledBaseline.id, type: 'angled', originalStartY: nearbyAngledBaseline.startY, originalEndY: nearbyAngledBaseline.endY });
+        setBaselineDragStartY(imageY);
+        setIsDraggingBaseline(true);
+        return;
+      }
+
       if (angledBaselines.length === 0) {
         // First baseline: start drawing a line to set angle
         setIsDrawingLine(true);
@@ -1074,6 +1174,39 @@ export default function PixiCanvasTest() {
         });
 
         console.log('✅ Box added:', char, currentBoxDraw);
+
+        // Auto-advance to next unannotated character
+        // Get updated boxes list (including the one we just added)
+        const updatedBoxes = [...boxes, { charIndex: currentCharIndex }];
+        const annotatedIndices = new Set(updatedBoxes.map(b => b.charIndex));
+
+        // Check if all unique characters have been annotated
+        const allAnnotated = uniqueChars.every((_, idx) => annotatedIndices.has(idx));
+
+        if (allAnnotated) {
+          // All characters annotated - switch to pointer mode
+          setCurrentCharIndex(-1);
+          setCurrentTool('pointer');
+        } else {
+          // Find next character that doesn't have a box yet
+          // First search forward from current position
+          let nextIndex = currentCharIndex + 1;
+          while (nextIndex < uniqueChars.length) {
+            if (!annotatedIndices.has(nextIndex)) break;
+            nextIndex++;
+          }
+
+          // If nothing found forward, search from the beginning
+          if (nextIndex >= uniqueChars.length) {
+            nextIndex = 0;
+            while (nextIndex < currentCharIndex) {
+              if (!annotatedIndices.has(nextIndex)) break;
+              nextIndex++;
+            }
+          }
+
+          setCurrentCharIndex(nextIndex);
+        }
       }
 
       // Clear drawing state
@@ -1090,7 +1223,15 @@ export default function PixiCanvasTest() {
       return;
     }
 
-    // Handle baseline mouseup (confirm placement)
+    // Handle baseline drag end (moving existing baseline)
+    if (draggingBaseline) {
+      setDraggingBaseline(null);
+      setBaselineDragStartY(null);
+      setIsDraggingBaseline(false);
+      return;
+    }
+
+    // Handle baseline mouseup (confirm placement of new baseline)
     if (currentTool === 'baseline' && isDrawingLine && tempBaselineY !== null) {
       addBaseline(tempBaselineY);
       setIsDrawingLine(false);

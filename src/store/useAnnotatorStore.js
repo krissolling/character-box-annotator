@@ -56,6 +56,7 @@ const useAnnotatorStore = create((set, get) => {
   autoSolveRegions: [],
   currentAutoSolveRegion: null,
   isProcessingOCR: false,
+  hasRunAutoOCR: false, // Track if auto-OCR has run for this session
 
   // Brush box state
   isBrushBoxMode: false,
@@ -83,6 +84,9 @@ const useAnnotatorStore = create((set, get) => {
   angledBaselineLineStart: null,
   angledBaselineLineEnd: null,
   tempAngledBaselinePos: null,
+
+  // Baseline drag state (for performance optimization)
+  isDraggingBaseline: false,
 
   // Character edit state
   editingBoxIndex: null,
@@ -121,6 +125,7 @@ const useAnnotatorStore = create((set, get) => {
   letterSpacing: 0,
   charPadding: 0,
   placeholderOpacity: 1.0, // 1.0 for preview, 0.1 for export
+  caseSensitive: true, // If false, uppercase can substitute for lowercase and vice versa in preview
 
   // Actions
   setIsAnnotating: (value) => set({ isAnnotating: value }),
@@ -132,32 +137,60 @@ const useAnnotatorStore = create((set, get) => {
     saveText(text); // Save to localStorage
     // DON'T clear boxes - keep all boxes for persistence
     // Boxes will be filtered by rendering logic to show only active ones
-    // Remap charIndex for all boxes based on their char property
-    set((state) => ({
-      text,
-      uniqueChars,
-      currentCharIndex: 0,
-      boxes: state.boxes.map(box => ({
-        ...box,
-        charIndex: uniqueChars.indexOf(box.char)
-      }))
-    }));
+    // Remap charIndex and variantId for all boxes based on their char property
+    set((state) => {
+      // Group boxes by character to reassign variantIds
+      const variantCounters = {};
+      const updatedBoxes = state.boxes.map(box => {
+        const newCharIndex = uniqueChars.indexOf(box.char);
+        // Reassign variantId sequentially for each character
+        if (variantCounters[box.char] === undefined) {
+          variantCounters[box.char] = 0;
+        }
+        const newVariantId = variantCounters[box.char]++;
+        return {
+          ...box,
+          charIndex: newCharIndex,
+          variantId: newVariantId
+        };
+      });
+      return {
+        text,
+        uniqueChars,
+        currentCharIndex: 0,
+        boxes: updatedBoxes
+      };
+    });
   },
 
   // Update text without clearing boxes or other state
   updateTextOnly: (text) => {
     const uniqueChars = [...new Set(text.split(''))];
     saveText(text); // Save to localStorage
-    // Remap charIndex for all boxes based on their char property
-    set((state) => ({
-      text,
-      uniqueChars,
-      currentCharIndex: 0,
-      boxes: state.boxes.map(box => ({
-        ...box,
-        charIndex: uniqueChars.indexOf(box.char)
-      }))
-    }));
+    // Remap charIndex and variantId for all boxes based on their char property
+    set((state) => {
+      // Group boxes by character to reassign variantIds
+      const variantCounters = {};
+      const updatedBoxes = state.boxes.map(box => {
+        const newCharIndex = uniqueChars.indexOf(box.char);
+        // Reassign variantId sequentially for each character
+        if (variantCounters[box.char] === undefined) {
+          variantCounters[box.char] = 0;
+        }
+        const newVariantId = variantCounters[box.char]++;
+        return {
+          ...box,
+          charIndex: newCharIndex,
+          variantId: newVariantId
+        };
+      });
+      return {
+        text,
+        uniqueChars,
+        currentCharIndex: 0,
+        boxes: updatedBoxes
+      };
+    });
   },
 
   addBox: (box) => set((state) => {
@@ -199,6 +232,22 @@ const useAnnotatorStore = create((set, get) => {
   deleteBox: (index) => set((state) => ({
     boxes: state.boxes.filter((_, i) => i !== index)
   })),
+
+  // Sanitize a box by adding auto-generated erase mask for edge intruders
+  sanitizeBox: (index, newEraseStrokes) => set((state) => {
+    const existingEditData = state.editedCharData[index] || {};
+    const existingEraseMask = existingEditData.eraseMask || [];
+
+    return {
+      editedCharData: {
+        ...state.editedCharData,
+        [index]: {
+          ...existingEditData,
+          eraseMask: [...existingEraseMask, ...newEraseStrokes]
+        }
+      }
+    };
+  }),
 
   // Get all variant boxes for a specific charIndex
   getVariantsForChar: (charIndex) => {
@@ -322,6 +371,8 @@ const useAnnotatorStore = create((set, get) => {
   }),
 
   setIsProcessingOCR: (value) => set({ isProcessingOCR: value }),
+
+  setHasRunAutoOCR: (value) => set({ hasRunAutoOCR: value }),
 
   clearAutoSolveRegions: () => set({
     autoSolveRegions: [],
@@ -793,6 +844,7 @@ const useAnnotatorStore = create((set, get) => {
 
   setCharPadding: (value) => set({ charPadding: value }),
   setPlaceholderOpacity: (value) => set({ placeholderOpacity: value }),
+  setCaseSensitive: (value) => set({ caseSensitive: value }),
 
   setBoxes: (boxes) => set({ boxes }),
 
@@ -802,7 +854,21 @@ const useAnnotatorStore = create((set, get) => {
 
   setBaselines: (baselines) => set({ baselines }),
 
+  updateBaseline: (id, newY) => set((state) => ({
+    baselines: state.baselines.map(b => b.id === id ? { ...b, y: newY } : b)
+  })),
+
   setAngledBaselines: (angledBaselines) => set({ angledBaselines }),
+
+  updateAngledBaseline: (id, newStartY, newEndY) => set((state) => ({
+    angledBaselines: state.angledBaselines.map(b => b.id === id ? {
+      ...b,
+      startY: newStartY,
+      endY: newEndY
+    } : b)
+  })),
+
+  setIsDraggingBaseline: (value) => set({ isDraggingBaseline: value }),
 
   setImageRotation: (rotation) => set({ imageRotation: rotation }),
 
@@ -867,6 +933,7 @@ const useAnnotatorStore = create((set, get) => {
     baselines: [],
     kerningAdjustments: {},
     zoomLevel: 1.0,
+    hasRunAutoOCR: false,
   }),
 
   // Export functionality

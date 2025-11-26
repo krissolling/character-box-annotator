@@ -27,6 +27,9 @@ export default function RightModePanel() {
   const image = useAnnotatorStore((state) => state.image);
   const addBox = useAnnotatorStore((state) => state.addBox);
   const setCurrentCharIndex = useAnnotatorStore((state) => state.setCurrentCharIndex);
+  const addBaseline = useAnnotatorStore((state) => state.addBaseline);
+  const addAngledBaseline = useAnnotatorStore((state) => state.addAngledBaseline);
+  const baselines = useAnnotatorStore((state) => state.baselines);
 
   // Determine if we need to show action buttons
   const showBrushActions = isBrushBoxMode && brushStrokes.length > 0;
@@ -65,7 +68,7 @@ export default function RightModePanel() {
       setOcrProgress('Processing OCR...');
 
       try {
-        const { addedBoxes, skippedCount } = await processAutoSolveRegions(
+        const { addedBoxes, skippedCount, suggestedBaselines } = await processAutoSolveRegions(
           image,
           autoSolveRegions,
           boxes,
@@ -76,19 +79,37 @@ export default function RightModePanel() {
 
         addedBoxes.forEach((box) => addBox(box));
 
-        const findNextUnannotatedChar = () => {
+        // Add suggested baselines (only if no baselines exist yet)
+        if (suggestedBaselines && suggestedBaselines.length > 0 && baselines.length === 0) {
+          console.log(`📏 Adding ${suggestedBaselines.length} suggested baseline(s)`);
+          suggestedBaselines.forEach((baseline) => {
+            if (baseline.type === 'horizontal') {
+              addBaseline(baseline.y);
+              console.log(`  ➡️ Added horizontal baseline at Y=${baseline.y.toFixed(1)}`);
+            } else if (baseline.type === 'angled') {
+              // addAngledBaseline expects (start, end, angle)
+              const start = { x: baseline.x0, y: baseline.y0 };
+              const end = { x: baseline.x1, y: baseline.y1 };
+              addAngledBaseline(start, end, baseline.angle);
+              console.log(`  ↗️ Added angled baseline at ${baseline.angle.toFixed(1)}°`);
+            }
+          });
+        }
+
+        // Find first unannotated character, or -1 if all are done
+        const findFirstUnannotatedChar = () => {
           for (let i = 0; i < uniqueChars.length; i++) {
             const char = uniqueChars[i];
             const hasBox = boxes.some((b) => b.char === char) || addedBoxes.some((b) => b.char === char);
             if (!hasBox) return i;
           }
-          return 0;
+          return -1; // All characters annotated - deselect
         };
 
-        setCurrentCharIndex(findNextUnannotatedChar());
+        setCurrentCharIndex(findFirstUnannotatedChar());
         clearAutoSolveRegions();
 
-        console.log(`✅ Auto-Solve Complete: Added ${addedBoxes.length}, Skipped ${skippedCount}`);
+        console.log(`✅ Auto-Solve Complete: Added ${addedBoxes.length}, Skipped ${skippedCount}, Baselines: ${suggestedBaselines?.length || 0}`);
       } catch (error) {
         console.error('❌ Auto-solve error:', error);
       } finally {

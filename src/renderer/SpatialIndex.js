@@ -12,31 +12,35 @@ export class SpatialIndex {
 
   /**
    * Insert a box into the spatial index
-   * @param {Object} box - Box data {x, y, width, height, charIndex, char}
-   * @param {number} index - Box index in the boxes array
+   * @param {Object} box - Box data {x, y, width, height, charIndex, char, originalIndex?}
+   * @param {number} index - Box index in the filtered boxes array
    */
   insert(box, index) {
+    // Use originalIndex if provided (for filtered arrays), otherwise use array index
+    const boxIndex = box.originalIndex !== undefined ? box.originalIndex : index;
+
     const item = {
       minX: box.x,
       minY: box.y,
       maxX: box.x + box.width,
       maxY: box.y + box.height,
-      boxIndex: index,
+      boxIndex: boxIndex,
       charIndex: box.charIndex,
       char: box.char
     };
 
     this.tree.insert(item);
-    this.boxMap.set(index, item);
+    this.boxMap.set(boxIndex, item);
   }
 
   /**
    * Update a box in the spatial index
    * @param {Object} box - Updated box data
-   * @param {number} index - Box index
+   * @param {number} index - Box index (original index if box has originalIndex property)
    */
   update(box, index) {
-    this.remove(index);
+    const boxIndex = box.originalIndex !== undefined ? box.originalIndex : index;
+    this.remove(boxIndex);
     this.insert(box, index);
   }
 

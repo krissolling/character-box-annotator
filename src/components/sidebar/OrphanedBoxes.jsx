@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Trash2, Plus, X, Archive } from 'lucide-react';
+import { Trash2, Archive } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 
 export default function OrphanedBoxes() {
@@ -9,8 +9,6 @@ export default function OrphanedBoxes() {
   const imageRotation = useAnnotatorStore((state) => state.imageRotation);
   const charPadding = useAnnotatorStore((state) => state.charPadding);
   const uniqueChars = useAnnotatorStore((state) => state.uniqueChars);
-  const text = useAnnotatorStore((state) => state.text);
-  const setText = useAnnotatorStore((state) => state.setText);
   const deleteBox = useAnnotatorStore((state) => state.deleteBox);
 
   // Collect orphaned boxes (characters not in current string)
@@ -119,10 +117,6 @@ export default function OrphanedBoxes() {
     }
   };
 
-  const handleAddToString = (char) => {
-    setText(text + char);
-  };
-
   const handleDeleteBox = (index) => {
     if (confirm(`Permanently delete box for "${boxes[index].char}"? This cannot be undone.`)) {
       deleteBox(index);
@@ -134,101 +128,57 @@ export default function OrphanedBoxes() {
   }
 
   return (
-    <>
-      <div className="te-panel">
+    <div className="te-panel">
+      {/* Header row */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}>
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between'
+          gap: '6px'
         }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}>
-            <Archive style={{ width: '14px', height: '14px', color: 'var(--te-black)' }} />
-            <span className="te-small-caps">
-              <strong>{orphanedBoxes.length}</strong> orphaned box{orphanedBoxes.length !== 1 ? 'es' : ''}
-            </span>
-          </div>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="te-btn te-btn-secondary"
-            style={{ height: '28px', fontSize: '10px' }}
-          >
-            View
-          </button>
+          <Archive style={{ width: '14px', height: '14px', color: 'var(--te-black)' }} />
+          <span className="te-small-caps">
+            <strong>{orphanedBoxes.length}</strong> orphaned box{orphanedBoxes.length !== 1 ? 'es' : ''}
+          </span>
         </div>
+        <button
+          onClick={() => setIsModalOpen(!isModalOpen)}
+          className="te-btn te-btn-secondary"
+          style={{ height: '28px', fontSize: '10px' }}
+        >
+          {isModalOpen ? 'Hide' : 'View'}
+        </button>
       </div>
 
-      {/* Modal */}
+      {/* Expandable content */}
       {isModalOpen && (
         <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
+          marginTop: '8px',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
+          flexDirection: 'column',
+          gap: '6px'
         }}>
-          <div style={{
-            background: 'var(--te-white)',
-            borderRadius: 'var(--radius-md)',
-            padding: '16px',
-            maxWidth: '500px',
-            maxHeight: '80vh',
-            overflow: 'auto',
-            border: '1px solid var(--te-gray-mid)',
-            boxShadow: 'var(--shadow-inner)'
-          }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '12px'
-            }}>
-              <span className="te-panel-title" style={{ margin: 0, fontSize: '11px' }}>
-                Orphaned Boxes ({orphanedBoxes.length})
-              </span>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '4px',
-                  color: 'var(--te-black)'
-                }}
-              >
-                <X style={{ width: '16px', height: '16px' }} />
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {orphanedBoxes.map((item) => (
-                <OrphanedBoxThumbnail
-                  key={item.index}
-                  item={item}
-                  renderCharacter={renderCharacter}
-                  image={image}
-                  onAddToString={handleAddToString}
-                  onDelete={handleDeleteBox}
-                />
-              ))}
-            </div>
-          </div>
+          {orphanedBoxes.map((item) => (
+            <OrphanedBoxThumbnail
+              key={item.index}
+              item={item}
+              renderCharacter={renderCharacter}
+              image={image}
+              onDelete={handleDeleteBox}
+            />
+          ))}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
 // Separate component for each orphaned box thumbnail
-function OrphanedBoxThumbnail({ item, renderCharacter, image, onAddToString, onDelete }) {
+function OrphanedBoxThumbnail({ item, renderCharacter, image, onDelete }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -277,23 +227,6 @@ function OrphanedBoxThumbnail({ item, renderCharacter, image, onAddToString, onD
       }}>
         "{item.char}"
       </div>
-
-      <button
-        onClick={() => onAddToString(item.char)}
-        title={`Add "${item.char}" back to string`}
-        className="te-btn"
-        style={{
-          height: '28px',
-          fontSize: '10px',
-          background: 'var(--te-green)',
-          borderColor: 'var(--te-green)',
-          color: 'var(--te-black)',
-          gap: '4px'
-        }}
-      >
-        <Plus style={{ width: '12px', height: '12px' }} />
-        Add
-      </button>
 
       <button
         onClick={() => onDelete(item.index)}

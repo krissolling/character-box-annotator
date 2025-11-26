@@ -367,6 +367,40 @@ See TODO.md for remaining lower priority items.
 
 ---
 
+## Performance Optimizations
+
+### Baseline Drag Performance
+**Problem**: When dragging existing baselines, `updateBaseline`/`updateAngledBaseline` is called on every mouse move, triggering WordPreview recalculation of all character heights.
+
+**Current behavior**:
+1. Mouse move → `updateBaseline(id, newY)`
+2. Store updates `baselines` array
+3. WordPreview's useEffect has `baselines` as dependency
+4. Full `renderCanvas()` runs - recalculates all character positions based on baseline alignment
+5. This happens 60+ times per second during drag
+
+**Solution** (same pattern as kerning optimization):
+1. Add `previewBaseline` state in PixiCanvasTest: `{ id, type, y }` for horizontal or `{ id, type, startY, endY }` for angled
+2. Add `previewBaselineRef` to track current value for mouseup handler
+3. During drag: update `previewBaseline` state (local), don't call store
+4. On mouseup: commit to store with `updateBaseline`/`updateAngledBaseline`
+5. Pass `previewBaseline` to WordPreview (or use context/store for preview state)
+6. WordPreview uses preview value during drag, falls back to store value otherwise
+
+**Complexity**: Medium - need to pass preview state to WordPreview, or add preview state to store
+
+**Files**: `PixiCanvasTest.jsx`, `WordPreview.jsx`, potentially `useAnnotatorStore.js`
+
+---
+
+### Box Drag Performance (Already Optimized)
+Box dragging uses `draggedBoxPreview` local state and only commits on mouseup. ✅
+
+### Kerning Drag Performance (Already Optimized)
+Kerning dragging uses `previewKerning` local state and only commits on mouseup. ✅
+
+---
+
 ## Testing Checklist
 
 After each fix, test:

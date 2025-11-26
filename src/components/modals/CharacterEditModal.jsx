@@ -37,8 +37,11 @@ export default function CharacterEditModal() {
     // Set canvas size to box size with padding
     const PADDING = 20;
 
-    // Calculate scale to fit in modal (max 400px to ensure full modal fits in viewport)
-    const MAX_DISPLAY_SIZE = 400;
+    // Calculate max display size based on viewport (leave room for header ~60px, padding ~80px)
+    const viewportHeight = window.innerHeight;
+    const maxCanvasHeight = viewportHeight * 0.9 - 140; // 90vh minus header and padding
+    const MAX_DISPLAY_SIZE = Math.min(400, maxCanvasHeight);
+
     const baseWidth = box.width + PADDING * 2;
     const baseHeight = box.height + PADDING * 2;
 
@@ -48,6 +51,9 @@ export default function CharacterEditModal() {
     if (baseWidth * scale > MAX_DISPLAY_SIZE || baseHeight * scale > MAX_DISPLAY_SIZE) {
       scale = Math.min(MAX_DISPLAY_SIZE / baseWidth, MAX_DISPLAY_SIZE / baseHeight);
     }
+
+    // Ensure minimum scale of 1
+    scale = Math.max(1, scale);
 
     const canvasWidth = baseWidth * scale;
     const canvasHeight = baseHeight * scale;
@@ -691,55 +697,35 @@ export default function CharacterEditModal() {
         borderRadius: '8px',
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
         maxWidth: '768px',
-        width: '100%',
+        width: 'auto',
         maxHeight: '90vh',
-        overflow: 'auto'
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column'
       }}>
-        {/* Header */}
+        {/* Header with controls and buttons */}
         <div style={{
+          padding: '12px 16px',
+          borderBottom: '1px solid #ddd',
+          background: '#f9fafb',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '16px',
-          borderBottom: '1px solid #ddd'
+          gap: '16px',
+          flexShrink: 0
         }}>
+          {/* Title */}
           <h2 style={{
-            fontSize: '20px',
+            fontSize: '14px',
             fontWeight: 'bold',
-            color: '#333'
+            color: '#333',
+            margin: 0,
+            whiteSpace: 'nowrap'
           }}>
-            Edit Character: {box.char}
+            Edit: {box.char}
           </h2>
-          <button
-            onClick={closeCharacterEdit}
-            style={{
-              padding: '4px',
-              background: 'none',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              transition: 'background 0.2s'
-            }}
-            onMouseOver={(e) => e.currentTarget.style.background = '#f5f5f5'}
-            onMouseOut={(e) => e.currentTarget.style.background = 'none'}
-          >
-            <X style={{ width: '24px', height: '24px' }} />
-          </button>
-        </div>
 
-        {/* Controls */}
-        <div style={{
-          padding: '16px',
-          borderBottom: '1px solid #ddd',
-          background: '#f9fafb'
-        }}>
-          <div style={{ flex: 1 }}>
-            <label className="te-control-label" style={{
-              display: 'block',
-              marginBottom: '8px'
-            }}>
-              Brush Size
-            </label>
+          {/* Brush Size Slider - narrower */}
+          <div style={{ width: '120px', flexShrink: 0 }}>
             <SplineSlider
               value={editBrushSize}
               onChange={setEditBrushSize}
@@ -747,25 +733,95 @@ export default function CharacterEditModal() {
               max={100}
               step={5}
               showInput={true}
-              inputWidth="40px"
+              inputWidth="36px"
             />
           </div>
 
-          <p style={{
-            fontSize: '12px',
-            color: '#6b7280',
-            marginTop: '8px'
-          }}>
-            Click and drag to erase unwanted pixels. Use "Delete Mask" to remove all masking.
-          </p>
+          {/* Delete Mask button */}
+          {(box.brushMask || editedCharData[editingBoxIndex]) && (
+            <button
+              onClick={handleDeleteMask}
+              style={{
+                padding: '6px 12px',
+                background: '#ef4444',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontWeight: 500,
+                fontSize: '12px',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                flexShrink: 0
+              }}
+              onMouseOver={(e) => e.currentTarget.style.background = '#dc2626'}
+              onMouseOut={(e) => e.currentTarget.style.background = '#ef4444'}
+              title="Delete all mask data"
+            >
+              <Trash2 style={{ width: '14px', height: '14px' }} />
+              Delete
+            </button>
+          )}
+
+          {/* Spacer */}
+          <div style={{ flex: 1 }} />
+
+          {/* Action buttons */}
+          <button
+            onClick={closeCharacterEdit}
+            style={{
+              padding: '6px 16px',
+              background: '#e5e7eb',
+              color: '#374151',
+              border: 'none',
+              borderRadius: '4px',
+              fontWeight: 500,
+              fontSize: '12px',
+              cursor: 'pointer',
+              transition: 'background 0.2s',
+              flexShrink: 0
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = '#d1d5db'}
+            onMouseOut={(e) => e.currentTarget.style.background = '#e5e7eb'}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            style={{
+              padding: '6px 16px',
+              background: '#10b981',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              fontWeight: 500,
+              fontSize: '12px',
+              cursor: 'pointer',
+              transition: 'background 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              flexShrink: 0
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
+            onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
+          >
+            <Save style={{ width: '14px', height: '14px' }} />
+            {hasChanges ? 'Save' : 'Close'}
+          </button>
         </div>
 
-        {/* Canvas */}
+        {/* Canvas - takes remaining space */}
         <div style={{
           padding: '16px',
           display: 'flex',
           justifyContent: 'center',
-          background: '#f3f4f6'
+          alignItems: 'center',
+          background: '#f3f4f6',
+          flex: 1,
+          minHeight: 0
         }}>
           <div style={{
             background: 'white',
@@ -779,7 +835,9 @@ export default function CharacterEditModal() {
               style={{
                 border: '2px solid #d1d5db',
                 imageRendering: 'pixelated',
-                display: 'block'
+                display: 'block',
+                maxWidth: '100%',
+                maxHeight: 'calc(90vh - 100px)'
               }}
             />
             <canvas
@@ -798,83 +856,6 @@ export default function CharacterEditModal() {
                 pointerEvents: 'all'
               }}
             />
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div style={{
-          padding: '16px',
-          borderTop: '1px solid #ddd',
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: '8px'
-        }}>
-          {/* Delete Mask button on the left */}
-          {(box.brushMask || editedCharData[editingBoxIndex]) && (
-            <button
-              onClick={handleDeleteMask}
-              style={{
-                padding: '8px 24px',
-                background: '#ef4444',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                transition: 'background 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.background = '#dc2626'}
-              onMouseOut={(e) => e.currentTarget.style.background = '#ef4444'}
-              title="Delete all mask data (brush and erase masks) for this character"
-            >
-              <Trash2 style={{ width: '16px', height: '16px' }} />
-              Delete Mask
-            </button>
-          )}
-
-          {/* Right-side buttons */}
-          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-            <button
-              onClick={closeCharacterEdit}
-              style={{
-                padding: '8px 24px',
-                background: '#e5e7eb',
-                color: '#374151',
-                border: 'none',
-                borderRadius: '6px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                transition: 'background 0.2s'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.background = '#d1d5db'}
-              onMouseOut={(e) => e.currentTarget.style.background = '#e5e7eb'}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              style={{
-                padding: '8px 24px',
-                background: '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                transition: 'background 0.2s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-              onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
-              onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
-            >
-              <Save style={{ width: '16px', height: '16px' }} />
-              {hasChanges ? 'Save Changes' : 'Close'}
-            </button>
           </div>
         </div>
       </div>

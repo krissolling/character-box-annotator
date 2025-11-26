@@ -167,7 +167,7 @@ export class PixiRenderer {
 
     // Render each visible box
     visibleBoxes.forEach(item => {
-      const box = this.boxes[item.boxIndex];
+      const box = this.getBoxByIndex(item.boxIndex);
       if (!box) return;
 
       // Skip rendering if this box is being dragged (show preview instead)
@@ -183,7 +183,7 @@ export class PixiRenderer {
 
     // Render dragged box preview on top
     if (draggedBoxPreview) {
-      const box = this.boxes[draggedBoxPreview.index];
+      const box = this.getBoxByIndex(draggedBoxPreview.index);
       if (box) {
         // Create semi-transparent preview
         const graphics = new PIXI.Graphics();
@@ -344,24 +344,45 @@ export class PixiRenderer {
 
   /**
    * Set boxes to render
-   * @param {Array} boxes - Array of box objects
+   * @param {Array} boxes - Array of box objects (may have originalIndex property)
    */
   setBoxes(boxes) {
     this.boxes = boxes;
+    // Create a map for looking up boxes by originalIndex (or array index if no originalIndex)
+    this.boxByIndex = new Map();
+    boxes.forEach((box, i) => {
+      const key = box.originalIndex !== undefined ? box.originalIndex : i;
+      this.boxByIndex.set(key, box);
+    });
     this.spatialIndex.rebuild(boxes);
     this.requestRender();
   }
 
   /**
-   * Update a single box
+   * Get a box by its index (handles originalIndex mapping)
    * @param {number} index - Box index
+   * @returns {Object|undefined} Box object
+   */
+  getBoxByIndex(index) {
+    return this.boxByIndex ? this.boxByIndex.get(index) : this.boxes[index];
+  }
+
+  /**
+   * Update a single box
+   * @param {number} index - Box index (original index if using filtered arrays)
    * @param {Object} updates - Updated properties
    */
   updateBox(index, updates) {
-    if (index < 0 || index >= this.boxes.length) return;
+    const box = this.getBoxByIndex(index);
+    if (!box) return;
 
-    this.boxes[index] = { ...this.boxes[index], ...updates };
-    this.spatialIndex.update(this.boxes[index], index);
+    // Update the box in place
+    Object.assign(box, updates);
+    // Update the map
+    if (this.boxByIndex) {
+      this.boxByIndex.set(index, box);
+    }
+    this.spatialIndex.update(box, index);
     this.requestRender();
   }
 
@@ -454,7 +475,7 @@ export class PixiRenderer {
 
       // Get all boxes from spatial index
       this.spatialIndex.tree.all().forEach(item => {
-        const box = this.boxes[item.boxIndex];
+        const box = this.getBoxByIndex(item.boxIndex);
         if (!box) return;
 
         // Check if cursor is within tolerance of any corner
