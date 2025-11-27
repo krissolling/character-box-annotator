@@ -3,7 +3,7 @@
 const Tesseract = window.Tesseract;
 
 const MIN_CONFIDENCE = 60; // Minimum OCR confidence threshold
-const PADDING = 2; // Padding around detected characters
+const PADDING = 8; // Padding around detected characters
 
 // Characters with descenders that extend below the baseline
 const DESCENDERS = new Set(['g', 'j', 'p', 'q', 'y', 'Q']);
@@ -39,9 +39,6 @@ export function processSelectedLineGroups(selectedLineGroups, uniqueChars, exist
 
       if (!isDuplicate) {
         baselines.push(line.baseline);
-        console.log(`📏 Added baseline from line "${line.text}" at Y=${((line.baseline.y0 + line.baseline.y1) / 2).toFixed(1)}`);
-      } else {
-        console.log(`⏭️ Skipping duplicate baseline from line "${line.text}" at Y=${((line.baseline.y0 + line.baseline.y1) / 2).toFixed(1)}`);
       }
     }
 
@@ -88,12 +85,6 @@ export function processSelectedLineGroups(selectedLineGroups, uniqueChars, exist
 
       boxes.push(box);
       charToBox[char] = box;
-
-      if (isInTarget) {
-        console.log(`✨ Added box for '${char}' from line "${line.text}"`);
-      } else {
-        console.log(`👻 Added orphaned box for '${char}' from line "${line.text}"`);
-      }
     });
   });
 
@@ -116,12 +107,9 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
     throw new Error('No regions to process');
   }
 
-  console.log(`📦 Processing ${regions.length} region(s)`);
-
   // Create Tesseract worker (using CDN global)
-  console.log('📦 Creating Tesseract worker...');
   const worker = await Tesseract.createWorker('eng', 1, {
-    logger: (m) => console.log('Tesseract:', m),
+    logger: () => {}, // Silent logger to reduce console noise
   });
 
   // Create a character-to-box map for quick lookups
@@ -144,7 +132,6 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
     fullCtx.translate(-fullCanvas.width / 2, -fullCanvas.height / 2);
     fullCtx.drawImage(image, 0, 0, fullCanvas.width, fullCanvas.height);
     fullCtx.restore();
-    console.log(`🔄 Applied ${imageRotation}° rotation to image for OCR`);
   } else {
     fullCtx.drawImage(image, 0, 0);
   }
@@ -156,7 +143,6 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
 
   for (let regionIndex = 0; regionIndex < regions.length; regionIndex++) {
     const region = regions[regionIndex];
-    console.log(`\n📦 Processing region ${regionIndex + 1}/${regions.length}`);
 
     // Crop to selected region from the rotated full canvas
     const cropCanvas = document.createElement('canvas');
@@ -171,18 +157,10 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
       0, 0, region.width, region.height
     );
 
-    console.log(`✂️ Cropped to region: ${region.width}x${region.height} at (${region.x}, ${region.y})`);
-
     const imageData = cropCanvas.toDataURL('image/png');
 
     // Run OCR (v6 requires explicit blocks output to get symbols)
-    console.log('🔍 Running OCR on region...');
     const result = await worker.recognize(imageData, {}, { blocks: true });
-
-    // Debug: Check what Tesseract actually recognized
-    console.log('📋 OCR Result text:', result.data.text);
-    console.log('📋 OCR Result confidence:', result.data.confidence);
-    console.log('📋 OCR Result keys:', Object.keys(result.data));
 
     // Extract symbols and baseline info from blocks structure (v6 requires manual extraction)
     // Structure: blocks -> paragraphs -> lines -> words -> symbols
@@ -218,7 +196,6 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
                     y1: region.y + line.baseline.y1,
                     confidence: line.confidence || 0
                   });
-                  console.log(`📏 Found Tesseract baseline: (${line.baseline.x0}, ${line.baseline.y0}) to (${line.baseline.x1}, ${line.baseline.y1})`);
                 }
 
                 // Collect line group data for picker UI
@@ -244,7 +221,6 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
                     confidence: line.confidence || 0,
                     region: region
                   });
-                  console.log(`📝 Line group: "${lineText}" (~${Math.round(lineHeight * 0.75)}px)`);
                 }
 
                 // Add symbols to main list
@@ -256,19 +232,8 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
       });
     }
 
-    console.log(`✅ Found ${symbols.length} symbols in region`);
-
-    // Debug: show symbol details including confidence
-    if (symbols.length > 0) {
-      console.log('📝 Symbol details:');
-      symbols.forEach((s, i) => {
-        console.log(`   ${i + 1}. '${s.text}' - confidence: ${s.confidence} - bbox: (${s.bbox.x0}, ${s.bbox.y0}) to (${s.bbox.x1}, ${s.bbox.y1})`);
-      });
-    }
-
     // Match symbols to our string
     const matches = matchSymbolsToString(symbols, uniqueChars, text);
-    console.log('🎯 Matched symbols:', matches);
 
     // Add matches to combined results, with region offset
     for (const [char, symbol] of Object.entries(matches)) {
@@ -284,7 +249,6 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
 
   // Terminate worker
   await worker.terminate();
-  console.log('🧹 Tesseract worker terminated');
 
   // Create bounding boxes from best matches
   const addedBoxes = [];
@@ -296,7 +260,6 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
 
     // Skip if this character already has a box (only for target characters)
     if (isInTargetString && charToBox[char]) {
-      console.log(`⏭️ Skipping '${char}' - already has a box`);
       skippedCount++;
       continue;
     }
@@ -321,11 +284,8 @@ export async function processAutoSolveRegions(image, regions, boxes, uniqueChars
 
     addedBoxes.push(box);
 
-    if (isInTargetString) {
-      console.log(`✨ Added box for '${char}' at (${box.x}, ${box.y}) ${box.width}x${box.height} - Confidence: ${match.symbol.confidence.toFixed(1)}%`);
-    } else {
+    if (!isInTargetString) {
       orphanedCount++;
-      console.log(`👻 Added orphaned box for '${char}' at (${box.x}, ${box.y}) ${box.width}x${box.height} - Confidence: ${match.symbol.confidence.toFixed(1)}%`);
     }
   }
 
@@ -354,8 +314,6 @@ function calculateSuggestedBaselines(lineBaselines, addedBoxes, allMatches) {
 
   // Option 1: Use Tesseract baselines if available
   if (lineBaselines.length > 0) {
-    console.log(`📏 Using ${lineBaselines.length} Tesseract baseline(s)`);
-
     lineBaselines.forEach((baseline, index) => {
       // Calculate angle from the baseline endpoints
       const dx = baseline.x1 - baseline.x0;
@@ -372,7 +330,6 @@ function calculateSuggestedBaselines(lineBaselines, addedBoxes, allMatches) {
           source: 'tesseract',
           confidence: baseline.confidence
         });
-        console.log(`  ➡️ Horizontal baseline at Y=${y.toFixed(1)} (confidence: ${baseline.confidence.toFixed(1)}%)`);
       } else {
         // For angled baselines, store the full line data
         suggestedBaselines.push({
@@ -385,7 +342,6 @@ function calculateSuggestedBaselines(lineBaselines, addedBoxes, allMatches) {
           source: 'tesseract',
           confidence: baseline.confidence
         });
-        console.log(`  ↗️ Angled baseline at ${angle.toFixed(1)}° (confidence: ${baseline.confidence.toFixed(1)}%)`);
       }
     });
 
@@ -393,10 +349,7 @@ function calculateSuggestedBaselines(lineBaselines, addedBoxes, allMatches) {
   }
 
   // Option 2: Fall back to calculating from symbol positions
-  console.log('📏 No Tesseract baselines found, calculating from symbol positions...');
-
   if (addedBoxes.length === 0) {
-    console.log('  ⚠️ No boxes to calculate baseline from');
     return suggestedBaselines;
   }
 
@@ -408,7 +361,6 @@ function calculateSuggestedBaselines(lineBaselines, addedBoxes, allMatches) {
 
     // Skip descenders - they extend below the baseline
     if (DESCENDERS.has(char)) {
-      console.log(`  ⏭️ Skipping descender '${char}' for baseline calculation`);
       continue;
     }
 
@@ -422,7 +374,6 @@ function calculateSuggestedBaselines(lineBaselines, addedBoxes, allMatches) {
   }
 
   if (baselinePoints.length === 0) {
-    console.log('  ⚠️ No non-descender characters found for baseline calculation');
     return suggestedBaselines;
   }
 
@@ -436,8 +387,6 @@ function calculateSuggestedBaselines(lineBaselines, addedBoxes, allMatches) {
   if (baselinePoints.length >= 2) {
     const { slope, intercept, r2 } = linearRegression(baselinePoints);
     const angle = Math.atan(slope) * (180 / Math.PI);
-
-    console.log(`  📊 Linear regression: slope=${slope.toFixed(4)}, angle=${angle.toFixed(2)}°, R²=${r2.toFixed(3)}`);
 
     // If R² is high and angle is significant, suggest angled baseline
     if (r2 > 0.8 && Math.abs(angle) > 1) {
@@ -454,7 +403,6 @@ function calculateSuggestedBaselines(lineBaselines, addedBoxes, allMatches) {
         source: 'calculated',
         confidence: r2 * 100
       });
-      console.log(`  ↗️ Calculated angled baseline at ${angle.toFixed(1)}°`);
     } else {
       // Use horizontal baseline at average Y
       suggestedBaselines.push({
@@ -463,7 +411,6 @@ function calculateSuggestedBaselines(lineBaselines, addedBoxes, allMatches) {
         source: 'calculated',
         confidence: r2 * 100
       });
-      console.log(`  ➡️ Calculated horizontal baseline at Y=${avgY.toFixed(1)}`);
     }
   } else {
     // Only one point, use horizontal baseline
@@ -473,7 +420,6 @@ function calculateSuggestedBaselines(lineBaselines, addedBoxes, allMatches) {
       source: 'calculated',
       confidence: 50
     });
-    console.log(`  ➡️ Single-point horizontal baseline at Y=${avgY.toFixed(1)}`);
   }
 
   return suggestedBaselines;
@@ -523,8 +469,6 @@ function linearRegression(points) {
  * @returns {Object} Map of characters to their best matching symbols
  */
 function matchSymbolsToString(tesseractSymbols, uniqueChars, targetString) {
-  console.log('🔍 Matching symbols to target string:', targetString);
-
   // Filter out low-confidence and empty symbols
   const validSymbols = tesseractSymbols.filter((s) =>
     s.text &&
@@ -534,17 +478,6 @@ function matchSymbolsToString(tesseractSymbols, uniqueChars, targetString) {
     s.bbox.x1 > s.bbox.x0 &&
     s.bbox.y1 > s.bbox.y0
   );
-
-  console.log(`📊 Filtered to ${validSymbols.length} valid symbols (confidence ≥ ${MIN_CONFIDENCE}%)`);
-
-  // Log all detected symbols for debugging
-  if (validSymbols.length > 0) {
-    console.log('📝 Detected symbols:', validSymbols.map(s => `'${s.text}' (${s.confidence.toFixed(1)}%)`).join(', '));
-  } else {
-    console.log('⚠️ No valid symbols found. Raw symbols:', tesseractSymbols.map(s => `'${s.text}' (${s.confidence?.toFixed(1) || 0}%)`).join(', '));
-  }
-
-  console.log('🎯 Looking for characters:', uniqueChars.join(', '));
 
   // Sort symbols left-to-right by x position
   const sorted = validSymbols.sort((a, b) => a.bbox.x0 - b.bbox.x0);
@@ -566,9 +499,6 @@ function matchSymbolsToString(tesseractSymbols, uniqueChars, targetString) {
 
       matches[targetChar] = best;
       matchedSymbols.add(best);
-      console.log(`✓ '${targetChar}' matched (leftmost) with confidence ${best.confidence.toFixed(1)}%`);
-    } else {
-      console.log(`✗ '${targetChar}' not found in region`);
     }
   }
 
@@ -579,7 +509,6 @@ function matchSymbolsToString(tesseractSymbols, uniqueChars, targetString) {
       // Only add if we don't already have a better match for this character
       if (!matches[char] || symbol.confidence > matches[char].confidence) {
         matches[char] = symbol;
-        console.log(`👻 '${char}' detected but not in target string (confidence ${symbol.confidence.toFixed(1)}%)`);
       }
     }
   }

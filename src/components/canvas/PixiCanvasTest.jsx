@@ -3,6 +3,7 @@ import { usePixiRenderer } from '../../renderer/usePixiRenderer';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 import ToolPalette from './ToolPalette';
 import RightModePanel from './RightModePanel';
+import { analyzeBoxForIntruders, generateEraseMask } from '../../utils/sanitizeBox';
 
 /**
  * Test component for pixi.js renderer
@@ -17,11 +18,11 @@ export default function PixiCanvasTest() {
   const bringBoxToFront = useAnnotatorStore(state => state.bringBoxToFront);
   const updateBox = useAnnotatorStore(state => state.updateBox);
   const addBox = useAnnotatorStore(state => state.addBox);
+  const advanceToNextChar = useAnnotatorStore(state => state.advanceToNextChar);
 
   // Tool states
   const currentTool = useAnnotatorStore(state => state.currentTool);
   const currentCharIndex = useAnnotatorStore(state => state.currentCharIndex);
-  const setCurrentCharIndex = useAnnotatorStore(state => state.setCurrentCharIndex);
   const text = useAnnotatorStore(state => state.text);
   const isBrushBoxMode = useAnnotatorStore(state => state.isBrushBoxMode);
   const brushBoxSize = useAnnotatorStore(state => state.brushBoxSize);
@@ -78,6 +79,7 @@ export default function PixiCanvasTest() {
   const currentAutoSolveRegion = useAnnotatorStore(state => state.currentAutoSolveRegion);
   const addAutoSolveRegion = useAnnotatorStore(state => state.addAutoSolveRegion);
   const setCurrentAutoSolveRegion = useAnnotatorStore(state => state.setCurrentAutoSolveRegion);
+  const setPendingSanitize = useAnnotatorStore(state => state.setPendingSanitize);
   const isRotationMode = useAnnotatorStore(state => state.isRotationMode);
   const isBaselineMode = useAnnotatorStore(state => state.isBaselineMode);
   const isAngledBaselineMode = useAnnotatorStore(state => state.isAngledBaselineMode);
@@ -102,11 +104,8 @@ export default function PixiCanvasTest() {
   useEffect(() => {
     if (!renderer.isReady || !image) return;
 
-    console.log('🎨 Loading image into pixi renderer...');
     renderer.loadImage(image)
       .then(() => {
-        console.log('✅ Image loaded successfully');
-
         // Fit to view after image loads
         const pixiRenderer = renderer.getRenderer();
         if (pixiRenderer && renderer.canvasRef?.current) {
@@ -137,14 +136,6 @@ export default function PixiCanvasTest() {
           return uniqueChars.some(uc => uc.toLowerCase() === box.char.toLowerCase());
         }
       });
-    console.log(`📦 Updating ${validBoxesWithIndices.length} boxes (total: ${boxes.length}, uniqueChars: ${uniqueChars.join('')}, caseSensitive: ${caseSensitive})`);
-    if (boxes.length !== validBoxesWithIndices.length) {
-      const filtered = boxes.filter(b => {
-        if (caseSensitive) return !uniqueChars.includes(b.char);
-        return !uniqueChars.some(uc => uc.toLowerCase() === b.char.toLowerCase());
-      });
-      console.log('📦 Filtered out boxes:', filtered.map(b => b.char));
-    }
     renderer.setBoxes(validBoxesWithIndices);
   }, [renderer.isReady, boxes, uniqueChars, caseSensitive]);
 
@@ -834,10 +825,10 @@ export default function PixiCanvasTest() {
                py >= box.y && py <= box.y + box.height;
       };
 
-      // Check corners on all boxes (top to bottom)
+      // Check corners on all boxes (top to bottom, skip orphaned boxes)
       for (let i = boxes.length - 1; i >= 0; i--) {
         const box = boxes[i];
-        if (!box) continue;
+        if (!box || box.charIndex === -1) continue; // Skip orphaned boxes
         const cornerCursor = getCornerCursor(box, imageX, imageY);
         if (cornerCursor) {
           setCursor(cornerCursor);
@@ -846,10 +837,10 @@ export default function PixiCanvasTest() {
         }
       }
 
-      // Check edges on all boxes (top to bottom)
+      // Check edges on all boxes (top to bottom, skip orphaned boxes)
       for (let i = boxes.length - 1; i >= 0; i--) {
         const box = boxes[i];
-        if (!box) continue;
+        if (!box || box.charIndex === -1) continue; // Skip orphaned boxes
         const edgeCursor = getEdgeCursor(box, imageX, imageY);
         if (edgeCursor) {
           setCursor(edgeCursor);
@@ -858,10 +849,10 @@ export default function PixiCanvasTest() {
         }
       }
 
-      // Check body on all boxes (top to bottom)
+      // Check body on all boxes (top to bottom, skip orphaned boxes)
       for (let i = boxes.length - 1; i >= 0; i--) {
         const box = boxes[i];
-        if (!box) continue;
+        if (!box || box.charIndex === -1) continue; // Skip orphaned boxes
         if (isPointInBox(box, imageX, imageY)) {
           setCursor('move');
           renderer.setHoveredBox(i);
@@ -1103,10 +1094,10 @@ export default function PixiCanvasTest() {
       return null;
     };
 
-    // Pass 1: Check corners on ALL boxes (top to bottom)
+    // Pass 1: Check corners on ALL boxes (top to bottom, skip orphaned boxes)
     for (let i = boxes.length - 1; i >= 0; i--) {
       const box = boxes[i];
-      if (!box) continue;
+      if (!box || box.charIndex === -1) continue; // Skip orphaned boxes
 
       const corner = getCornerAtPoint(box, imageX, imageY);
       if (corner) {
@@ -1120,10 +1111,10 @@ export default function PixiCanvasTest() {
       }
     }
 
-    // Pass 2: Check edges on ALL boxes (top to bottom)
+    // Pass 2: Check edges on ALL boxes (top to bottom, skip orphaned boxes)
     for (let i = boxes.length - 1; i >= 0; i--) {
       const box = boxes[i];
-      if (!box) continue;
+      if (!box || box.charIndex === -1) continue; // Skip orphaned boxes
 
       const edge = getEdgeAtPoint(box, imageX, imageY);
       if (edge) {
@@ -1137,10 +1128,10 @@ export default function PixiCanvasTest() {
       }
     }
 
-    // Pass 3: Check body (inside) on ALL boxes (top to bottom)
+    // Pass 3: Check body (inside) on ALL boxes (top to bottom, skip orphaned boxes)
     for (let i = boxes.length - 1; i >= 0; i--) {
       const box = boxes[i];
-      if (!box) continue;
+      if (!box || box.charIndex === -1) continue; // Skip orphaned boxes
 
       if (isPointInBox(box, imageX, imageY)) {
         setSelectedBox(i);
@@ -1158,12 +1149,12 @@ export default function PixiCanvasTest() {
   const handleMouseUp = () => {
     // Finish box drawing
     if (isDrawingBox && currentBoxDraw && currentBoxDraw.width > 10 && currentBoxDraw.height > 10) {
-      const char = text[currentCharIndex];
+      const char = uniqueChars[currentCharIndex];
       if (char) {
         // Count existing boxes for this character to determine variantId
         const existingVariants = boxes.filter(b => b.char === char).length;
 
-        addBox({
+        const newBox = {
           x: currentBoxDraw.x,
           y: currentBoxDraw.y,
           width: currentBoxDraw.width,
@@ -1171,42 +1162,47 @@ export default function PixiCanvasTest() {
           char,
           charIndex: currentCharIndex,
           variantId: existingVariants
-        });
+        };
 
-        console.log('✅ Box added:', char, currentBoxDraw);
+        // Check for intruders before adding the box
+        if (image) {
+          try {
+            const analysis = analyzeBoxForIntruders(image, newBox);
+            if (analysis.hasIntruders) {
+              // Generate the erase mask
+              const eraseMask = generateEraseMask(
+                analysis.intruderMask,
+                analysis.debugData.width,
+                analysis.debugData.height,
+                newBox.x,  // offsetX = box's absolute position
+                newBox.y   // offsetY = box's absolute position
+              );
 
-        // Auto-advance to next unannotated character
-        // Get updated boxes list (including the one we just added)
-        const updatedBoxes = [...boxes, { charIndex: currentCharIndex }];
-        const annotatedIndices = new Set(updatedBoxes.map(b => b.charIndex));
+              // Add the box first
+              addBox(newBox);
 
-        // Check if all unique characters have been annotated
-        const allAnnotated = uniqueChars.every((_, idx) => annotatedIndices.has(idx));
+              // Then set pending sanitize with the analysis
+              setPendingSanitize(newBox, {
+                ...analysis,
+                eraseMask,
+              });
 
-        if (allAnnotated) {
-          // All characters annotated - switch to pointer mode
-          setCurrentCharIndex(-1);
-          setCurrentTool('pointer');
-        } else {
-          // Find next character that doesn't have a box yet
-          // First search forward from current position
-          let nextIndex = currentCharIndex + 1;
-          while (nextIndex < uniqueChars.length) {
-            if (!annotatedIndices.has(nextIndex)) break;
-            nextIndex++;
-          }
-
-          // If nothing found forward, search from the beginning
-          if (nextIndex >= uniqueChars.length) {
-            nextIndex = 0;
-            while (nextIndex < currentCharIndex) {
-              if (!annotatedIndices.has(nextIndex)) break;
-              nextIndex++;
+              // Clear drawing state but don't advance - wait for sanitize confirm/dismiss
+              setIsDrawingBox(false);
+              setDrawStart(null);
+              setCurrentBoxDraw(null);
+              return;
             }
+          } catch (err) {
+            console.warn('⚠️ Failed to analyze box for intruders:', err);
           }
-
-          setCurrentCharIndex(nextIndex);
         }
+
+        // No intruders or analysis failed - add box normally
+        addBox(newBox);
+
+        // Advance to next character using centralized logic
+        advanceToNextChar(true);
       }
 
       // Clear drawing state
@@ -1440,7 +1436,6 @@ export default function PixiCanvasTest() {
       // Only add region if it has some size
       if (currentAutoSolveRegion.width > 10 && currentAutoSolveRegion.height > 10) {
         addAutoSolveRegion({ ...currentAutoSolveRegion });
-        console.log(`✅ Region ${autoSolveRegions.length + 1} added:`, currentAutoSolveRegion);
       }
       setIsDrawingRegion(false);
       setRegionStart(null);
@@ -1462,8 +1457,6 @@ export default function PixiCanvasTest() {
       addBrushStroke({ points: currentStroke, size: brushBoxSize });
       setCurrentStroke([]);
       setIsDrawingStroke(false);
-
-      console.log(`🖌️ Stroke completed, total strokes: ${brushStrokes.length + 1}`);
 
       // Update overlay to show all strokes (including the one we just added)
       const pixiRenderer = renderer.getRenderer();

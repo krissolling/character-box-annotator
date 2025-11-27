@@ -1,4 +1,5 @@
-import { Square, Paintbrush, Zap, RotateCw, Minus, Slash, MousePointer2, Search, RefreshCcw } from 'lucide-react';
+import React from 'react';
+import { Square, Paintbrush, Zap, RotateCw, Minus, Slash, MousePointer2, Search, RefreshCcw, Wand2 } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 import ZoomControls from './ZoomControls';
 import SplineSlider from '../ui/SplineSlider';
@@ -6,6 +7,7 @@ import SplineSlider from '../ui/SplineSlider';
 export default function ToolPalette() {
   const currentTool = useAnnotatorStore((state) => state.currentTool);
   const setCurrentTool = useAnnotatorStore((state) => state.setCurrentTool);
+  const runFullFileOCR = useAnnotatorStore((state) => state.runFullFileOCR);
   const startAutoSolveRegionSelection = useAnnotatorStore((state) => state.startAutoSolveRegionSelection);
   const startBrushBoxMode = useAnnotatorStore((state) => state.startBrushBoxMode);
   const startRotationMode = useAnnotatorStore((state) => state.startRotationMode);
@@ -57,7 +59,13 @@ export default function ToolPalette() {
       if (except !== 'zoom') cancelZoom();
     };
 
-    if (tool.value === 'autosolve') {
+    if (tool.value === 'fullocr') {
+      if (!image) {
+        alert('Please upload an image first.');
+        return;
+      }
+      runFullFileOCR();
+    } else if (tool.value === 'autosolve') {
       if (!text || text.length === 0) {
         alert('Please write a string first before using auto-solve.');
         return;
@@ -140,6 +148,7 @@ export default function ToolPalette() {
     { id: 'pointer', icon: MousePointer2, label: 'Pointer', value: 'pointer', shortcut: 'V' },
     { id: 'box', icon: Square, label: 'Box', value: 'box', shortcut: 'M' },
     { id: 'brush', icon: Paintbrush, label: 'Brush', value: 'brush', shortcut: 'B' },
+    { id: 'full-ocr', icon: Wand2, label: 'Full OCR', value: 'fullocr' },
     { id: 'auto-solve', icon: Zap, label: 'Auto-Solve', value: 'autosolve' },
     { id: 'baseline', icon: Minus, label: 'Baseline', value: 'baseline' },
     // { id: 'angled', icon: Slash, label: 'Angled', value: 'angled' }, // Hidden for now
@@ -166,87 +175,103 @@ export default function ToolPalette() {
         if (tool.value === 'angled' && isAngledBaselineMode) isActive = true;
         if (tool.value === 'rotate' && isRotationMode) isActive = true;
 
-        // Add separators after auto-solve (index 3) and after rotate (index 6)
-        const showSeparator = index === 3 || index === 6;
+        // Check if drawing tools are in warning state (selected but no character to draw)
+        const isDrawingTool = tool.value === 'box' || tool.value === 'brush' || tool.value === 'autosolve';
+        const noCharacterAvailable = currentCharIndex < 0 || currentCharIndex >= uniqueChars.length;
+        const isWarning = isActive && isDrawingTool && noCharacterAvailable;
+
+        // Add separator after Brush (index 2)
+        const showSeparator = index === 2;
+
+        // Build tooltip
+        let tooltip = tool.shortcut ? `${tool.label} (${tool.shortcut})` : tool.label;
+        if (isWarning) {
+          tooltip = `${tool.label} - No character to draw (all annotated)`;
+        }
 
         return (
-          <div key={tool.id} style={{ position: 'relative' }}>
-            <button
-              onClick={() => handleToolClick(tool)}
-              className={`te-tool-btn ${isActive ? 'active' : ''}`}
-              title={tool.shortcut ? `${tool.label} (${tool.shortcut})` : tool.label}
-            >
-              <Icon style={{ width: '14px', height: '14px' }} />
-            </button>
-            {/* Brush size slider - show next to brush button when active */}
-            {tool.value === 'brush' && isBrushBoxMode && (
-              <div style={{
-                position: 'absolute',
-                left: '100%',
-                top: '0',
-                marginLeft: '12px',
-                display: 'grid',
-                gridTemplateColumns: '1fr',
-                alignItems: 'center',
-                height: '32px',
-                width: '139px' // 91px slider + 44px input + 4px gap
-              }}>
-                <SplineSlider
-                  value={brushBoxSize}
-                  onChange={setBrushBoxSize}
-                  min={5}
-                  max={600}
-                  step={1}
-                  showInput={true}
-                  inputWidth="44px"
-                />
-              </div>
-            )}
-            {/* Rotation info - show next to rotate button when active */}
-            {tool.value === 'rotate' && isRotationMode && (
-              <div style={{
-                position: 'absolute',
-                left: '100%',
-                top: '0',
-                marginLeft: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                whiteSpace: 'nowrap',
-                height: '32px'
-              }}>
-                <span style={{
-                  fontSize: '10px',
-                  fontVariationSettings: "'wght' 500",
-                  background: 'var(--te-gray-panel)',
-                  padding: '0 8px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--te-gray-mid)',
-                  boxShadow: 'var(--shadow-inner)',
+          <React.Fragment key={tool.id}>
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => handleToolClick(tool)}
+                className={`te-tool-btn ${isActive ? 'active' : ''} ${isWarning ? 'warning' : ''}`}
+                title={tooltip}
+              >
+                <Icon style={{ width: '14px', height: '14px' }} />
+              </button>
+              {/* Brush size slider - show next to brush button when active */}
+              {tool.value === 'brush' && isBrushBoxMode && (
+                <div style={{
+                  position: 'absolute',
+                  left: '100%',
+                  top: '0',
+                  marginLeft: '12px',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr',
+                  alignItems: 'center',
                   height: '32px',
-                  display: 'flex',
-                  alignItems: 'center'
+                  width: '139px' // 91px slider + 44px input + 4px gap
                 }}>
-                  {imageRotation.toFixed(1)}°
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    resetRotation();
-                  }}
-                  className="te-tool-btn"
-                  title="Reset rotation"
-                >
-                  <RefreshCcw style={{ width: '12px', height: '12px' }} />
-                </button>
-              </div>
-            )}
+                  <SplineSlider
+                    value={brushBoxSize}
+                    onChange={setBrushBoxSize}
+                    min={5}
+                    max={600}
+                    step={1}
+                    showInput={true}
+                    inputWidth="44px"
+                  />
+                </div>
+              )}
+              {/* Rotation info - show next to rotate button when active */}
+              {tool.value === 'rotate' && isRotationMode && (
+                <div style={{
+                  position: 'absolute',
+                  left: '100%',
+                  top: '0',
+                  marginLeft: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  whiteSpace: 'nowrap',
+                  height: '32px'
+                }}>
+                  <span style={{
+                    fontSize: '10px',
+                    fontVariationSettings: "'wght' 500",
+                    background: 'var(--te-gray-panel)',
+                    padding: '0 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--te-gray-mid)',
+                    boxShadow: 'var(--shadow-inner)',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}>
+                    {imageRotation.toFixed(1)}°
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      resetRotation();
+                    }}
+                    className="te-tool-btn"
+                    title="Reset rotation"
+                  >
+                    <RefreshCcw style={{ width: '12px', height: '12px' }} />
+                  </button>
+                </div>
+              )}
+            </div>
             {showSeparator && (
               <div className="te-tool-separator" />
             )}
-          </div>
+          </React.Fragment>
         );
       })}
+
+      {/* Separator between Rotate and Zoom */}
+      <div className="te-tool-separator" />
 
       {/* Zoom tool button */}
       <button

@@ -2,21 +2,19 @@ import useAnnotatorStore from '../../store/useAnnotatorStore';
 import { Pencil } from 'lucide-react';
 
 export default function EditedCharacters() {
-  const editedCharData = useAnnotatorStore((state) => state.editedCharData);
   const boxes = useAnnotatorStore((state) => state.boxes);
   const openCharacterEdit = useAnnotatorStore((state) => state.openCharacterEdit);
 
-  // Collect all edited boxes (both manually edited and brush-drawn)
+  // Collect all boxes that have an eraseMask
   const editedBoxes = [];
 
   boxes.forEach((box, index) => {
-    // Include if: has editedCharData OR has brushMask
-    if (editedCharData[index] || (box.brushMask && box.brushMask.length > 0)) {
+    // Include if box has an eraseMask
+    if (box.eraseMask) {
       editedBoxes.push({
         index,
         char: box.char,
-        box: box,
-        hasBrushMask: !!(box.brushMask && box.brushMask.length > 0)
+        box: box
       });
     }
   });
@@ -35,7 +33,7 @@ export default function EditedCharacters() {
       }}>
         <Pencil style={{ width: '14px', height: '14px', color: 'var(--te-black)' }} />
         <span className="te-small-caps">
-          <strong>{editedBoxes.length}</strong> edited character{editedBoxes.length !== 1 ? 's' : ''}
+          <strong>{editedBoxes.length}</strong> masked character{editedBoxes.length !== 1 ? 's' : ''}
         </span>
       </div>
 

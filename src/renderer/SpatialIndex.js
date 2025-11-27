@@ -75,9 +75,10 @@ export class SpatialIndex {
    * @param {number} x - X coordinate
    * @param {number} y - Y coordinate
    * @param {number} tolerance - Search tolerance in image pixels (includes corner/edge hitboxes)
+   * @param {boolean} includeOrphaned - Whether to include orphaned boxes (charIndex === -1)
    * @returns {Object|null} Box item or null
    */
-  findBoxAtPoint(x, y, tolerance = 0) {
+  findBoxAtPoint(x, y, tolerance = 0, includeOrphaned = false) {
     const results = this.tree.search({
       minX: x - tolerance,
       minY: y - tolerance,
@@ -85,23 +86,33 @@ export class SpatialIndex {
       maxY: y + tolerance
     });
 
+    // Filter out orphaned boxes if not included
+    const filtered = includeOrphaned
+      ? results
+      : results.filter(item => item.charIndex !== -1);
+
     // Return the last item (topmost in render order)
-    return results.length > 0 ? results[results.length - 1] : null;
+    return filtered.length > 0 ? filtered[filtered.length - 1] : null;
   }
 
   /**
    * Find all boxes that intersect with a point
    * @param {number} x - X coordinate
    * @param {number} y - Y coordinate
+   * @param {boolean} includeOrphaned - Whether to include orphaned boxes (charIndex === -1)
    * @returns {Array} Array of box items
    */
-  findBoxesAtPoint(x, y) {
-    return this.tree.search({
+  findBoxesAtPoint(x, y, includeOrphaned = false) {
+    const results = this.tree.search({
       minX: x,
       minY: y,
       maxX: x,
       maxY: y
     });
+
+    return includeOrphaned
+      ? results
+      : results.filter(item => item.charIndex !== -1);
   }
 
   /**

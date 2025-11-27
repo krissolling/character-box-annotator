@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Trash2, Archive } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
+import { eraseMaskToImageData } from '../../utils/maskUtils';
 
 export default function OrphanedBoxes() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -55,66 +56,61 @@ export default function OrphanedBoxes() {
       sourceImage = tempCanvas;
     }
 
-    if (box.brushMask && box.brushMask.length > 0) {
-      const maskCanvas = document.createElement('canvas');
-      maskCanvas.width = boxWidth;
-      maskCanvas.height = boxHeight;
-      const maskCtx = maskCanvas.getContext('2d');
+    // Draw character to temp canvas first
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = boxWidth;
+    tempCanvas.height = boxHeight;
+    const tempCtx = tempCanvas.getContext('2d');
 
-      box.brushMask.forEach(stroke => {
-        maskCtx.strokeStyle = 'black';
-        maskCtx.fillStyle = 'black';
-        maskCtx.lineWidth = stroke.size;
-        maskCtx.lineCap = 'round';
-        maskCtx.lineJoin = 'round';
+    tempCtx.drawImage(
+      sourceImage,
+      box.x, box.y, box.width, box.height,
+      charPadding, charPadding, box.width, box.height
+    );
 
-        maskCtx.beginPath();
-        stroke.points.forEach((point, i) => {
-          const boxRelativeX = point.x - box.x;
-          const boxRelativeY = point.y - box.y;
-          const x = charPadding + boxRelativeX;
-          const y = charPadding + boxRelativeY;
-          if (i === 0) {
-            maskCtx.moveTo(x, y);
-          } else {
-            maskCtx.lineTo(x, y);
-          }
-        });
-        maskCtx.stroke();
+    // Apply eraseMask if exists (with absolute coordinate clipping)
+    if (box.eraseMask) {
+      const { width: maskWidth, height: maskHeight, offsetX, offsetY } = box.eraseMask;
 
-        stroke.points.forEach(point => {
-          const boxRelativeX = point.x - box.x;
-          const boxRelativeY = point.y - box.y;
-          const x = charPadding + boxRelativeX;
-          const y = charPadding + boxRelativeY;
-          maskCtx.beginPath();
-          maskCtx.arc(x, y, stroke.size / 2, 0, Math.PI * 2);
-          maskCtx.fill();
-        });
-      });
+      // Calculate intersection between mask and box (absolute coords)
+      const maskStartX = offsetX !== undefined ? offsetX : box.x;
+      const maskStartY = offsetY !== undefined ? offsetY : box.y;
+      const maskEndX = maskStartX + maskWidth;
+      const maskEndY = maskStartY + maskHeight;
 
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = boxWidth;
-      tempCanvas.height = boxHeight;
-      const tempCtx = tempCanvas.getContext('2d');
+      const intersectX = Math.max(maskStartX, box.x);
+      const intersectY = Math.max(maskStartY, box.y);
+      const intersectEndX = Math.min(maskEndX, box.x + box.width);
+      const intersectEndY = Math.min(maskEndY, box.y + box.height);
 
-      tempCtx.drawImage(
-        sourceImage,
-        box.x, box.y, box.width, box.height,
-        charPadding, charPadding, box.width, box.height
-      );
+      const intersectWidth = intersectEndX - intersectX;
+      const intersectHeight = intersectEndY - intersectY;
 
-      tempCtx.globalCompositeOperation = 'destination-in';
-      tempCtx.drawImage(maskCanvas, 0, 0);
+      if (intersectWidth > 0 && intersectHeight > 0) {
+        const srcX = intersectX - maskStartX;
+        const srcY = intersectY - maskStartY;
+        const dstX = intersectX - box.x + charPadding;
+        const dstY = intersectY - box.y + charPadding;
 
-      ctx.drawImage(tempCanvas, 0, 0);
-    } else {
-      ctx.drawImage(
-        sourceImage,
-        box.x, box.y, box.width, box.height,
-        charPadding, charPadding, box.width, box.height
-      );
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = maskWidth;
+        maskCanvas.height = maskHeight;
+        const maskCtx = maskCanvas.getContext('2d');
+
+        const imageData = eraseMaskToImageData(box.eraseMask);
+        maskCtx.putImageData(imageData, 0, 0);
+
+        tempCtx.globalCompositeOperation = 'destination-out';
+        tempCtx.drawImage(
+          maskCanvas,
+          srcX, srcY, intersectWidth, intersectHeight,
+          dstX, dstY, intersectWidth, intersectHeight
+        );
+        tempCtx.globalCompositeOperation = 'source-over';
+      }
     }
+
+    ctx.drawImage(tempCanvas, 0, 0);
   };
 
   const handleDeleteBox = (index) => {
@@ -128,113 +124,95 @@ export default function OrphanedBoxes() {
   }
 
   return (
-    <div className="te-panel">
-      {/* Header row */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between'
-      }}>
+    <>
+      <style>{`
+        .orphaned-boxes-container:hover .orphaned-box-delete-btn {
+          opacity: 1 !important;
+        }
+      `}</style>
+      <div className="te-panel orphaned-boxes-container">
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '6px'
+          gap: '6px',
+          marginBottom: '6px'
         }}>
           <Archive style={{ width: '14px', height: '14px', color: 'var(--te-black)' }} />
           <span className="te-small-caps">
             <strong>{orphanedBoxes.length}</strong> orphaned box{orphanedBoxes.length !== 1 ? 'es' : ''}
           </span>
         </div>
-        <button
-          onClick={() => setIsModalOpen(!isModalOpen)}
-          className="te-btn te-btn-secondary"
-          style={{ height: '28px', fontSize: '10px' }}
-        >
-          {isModalOpen ? 'Hide' : 'View'}
-        </button>
-      </div>
 
-      {/* Expandable content */}
-      {isModalOpen && (
-        <div style={{
-          marginTop: '8px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '6px'
-        }}>
-          {orphanedBoxes.map((item) => (
-            <OrphanedBoxThumbnail
-              key={item.index}
-              item={item}
-              renderCharacter={renderCharacter}
-              image={image}
-              onDelete={handleDeleteBox}
-            />
-          ))}
-        </div>
-      )}
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '4px'
+      }}>
+        {orphanedBoxes.map((item) => (
+          <OrphanedBoxItem
+            key={item.index}
+            item={item}
+            image={image}
+            renderCharacter={renderCharacter}
+            onDelete={() => handleDeleteBox(item.index)}
+          />
+        ))}
+      </div>
     </div>
+    </>
   );
 }
 
-// Separate component for each orphaned box thumbnail
-function OrphanedBoxThumbnail({ item, renderCharacter, image, onDelete }) {
+function OrphanedBoxItem({ item, image, renderCharacter, onDelete }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
     if (canvasRef.current && image) {
       renderCharacter(canvasRef.current, item.box);
     }
-  }, [item, image, renderCharacter]);
+  }, [item.box, image, renderCharacter]);
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-      padding: '8px',
-      border: '1px solid var(--te-gray-mid)',
-      borderRadius: 'var(--radius-sm)',
-      background: 'var(--te-gray-light)',
-      boxShadow: 'var(--shadow-inner)'
-    }}>
-      <div style={{
-        width: '32px',
-        height: '32px',
-        border: '1px solid var(--te-gray-mid)',
-        borderRadius: 'var(--radius-sm)',
-        overflow: 'hidden',
+    <div
+      className="orphaned-box-item"
+      style={{
         position: 'relative',
-        background: 'var(--te-white)',
-        flexShrink: 0
-      }}>
-        <canvas
-          ref={canvasRef}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain',
-            display: 'block'
-          }}
-        />
-      </div>
-
-      <div style={{
-        flex: 1,
-        fontSize: '14px',
-        fontVariationSettings: "'wght' 500",
-        color: 'var(--te-black)'
-      }}>
-        "{item.char}"
-      </div>
-
+        display: 'inline-block'
+      }}
+    >
+      <canvas
+        ref={canvasRef}
+        style={{
+          maxWidth: '40px',
+          maxHeight: '40px',
+          border: '1px solid var(--te-gray-300)',
+          borderRadius: '4px'
+        }}
+        title={`Orphaned: "${item.char}"`}
+      />
       <button
-        onClick={() => onDelete(item.index)}
-        title={`Permanently delete box for "${item.char}"`}
-        className="te-btn te-btn-danger te-btn-icon"
-        style={{ height: '28px', width: '28px' }}
+        onClick={onDelete}
+        className="orphaned-box-delete-btn"
+        style={{
+          position: 'absolute',
+          top: '-4px',
+          right: '-4px',
+          width: '16px',
+          height: '16px',
+          padding: 0,
+          background: '#ef4444',
+          border: 'none',
+          borderRadius: '50%',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: 0,
+          transition: 'opacity 0.2s'
+        }}
+        title={`Delete "${item.char}"`}
       >
-        <Trash2 style={{ width: '12px', height: '12px' }} />
+        <Trash2 style={{ width: '10px', height: '10px', color: 'white' }} />
       </button>
     </div>
   );

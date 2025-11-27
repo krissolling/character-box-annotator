@@ -123,14 +123,20 @@ export default function ExportPanel() {
       imageWidth: image?.width,
       imageHeight: image?.height,
       text,
-      boxes: boxes.map((box, index) => ({
+      boxes: boxes.map((box) => ({
         char: box.char,
         x: box.x,
         y: box.y,
         width: box.width,
         height: box.height,
-        brushMask: box.brushMask || [],
-        eraseMask: editedCharData[index]?.eraseMask || null
+        // Export new unified eraseMask format (convert Uint8Array to regular array for JSON)
+        eraseMask: box.eraseMask ? {
+          pixels: Array.from(box.eraseMask.pixels),
+          width: box.eraseMask.width,
+          height: box.eraseMask.height,
+          offsetX: box.eraseMask.offsetX || box.x,
+          offsetY: box.eraseMask.offsetY || box.y
+        } : null
       })),
       baselines,
       angledBaselines,
@@ -164,14 +170,20 @@ export default function ExportPanel() {
       imageWidth: image?.width,
       imageHeight: image?.height,
       text,
-      boxes: boxes.map((box, index) => ({
+      boxes: boxes.map((box) => ({
         char: box.char,
         x: box.x,
         y: box.y,
         width: box.width,
         height: box.height,
-        brushMask: box.brushMask || [],
-        eraseMask: editedCharData[index]?.eraseMask || null
+        // Export new unified eraseMask format
+        eraseMask: box.eraseMask ? {
+          pixels: Array.from(box.eraseMask.pixels),
+          width: box.eraseMask.width,
+          height: box.eraseMask.height,
+          offsetX: box.eraseMask.offsetX || box.x,
+          offsetY: box.eraseMask.offsetY || box.y
+        } : null
       })),
       baselines,
       angledBaselines,

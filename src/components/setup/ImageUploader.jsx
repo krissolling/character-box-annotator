@@ -50,27 +50,40 @@ export default function ImageUploader() {
         setImage(img, new File([imageBlob], imageName));
 
         // Restore all state from JSON
+        // First set text to establish uniqueChars
         setText(jsonData.text);
 
-        // Restore boxes with both brushMask and eraseMask
-        const restoredBoxes = jsonData.boxes.map(box => ({
-          char: box.char,
-          x: box.x,
-          y: box.y,
-          width: box.width,
-          height: box.height,
-          brushMask: box.brushMask || []
-        }));
-        setBoxes(restoredBoxes);
+        // Build uniqueChars from the text
+        const uniqueChars = [...new Set(jsonData.text.split(''))];
 
-        // Restore editedCharData with eraseMasks
-        const restoredEditedCharData = {};
-        jsonData.boxes.forEach((box, index) => {
-          if (box.eraseMask) {
-            restoredEditedCharData[index] = { eraseMask: box.eraseMask };
+        // Restore boxes with charIndex and variantId computed from the text
+        const variantCounters = {};
+        const restoredBoxes = jsonData.boxes.map(box => {
+          const charIndex = uniqueChars.indexOf(box.char);
+          // Assign sequential variantId for each character
+          if (variantCounters[box.char] === undefined) {
+            variantCounters[box.char] = 0;
           }
+          const variantId = variantCounters[box.char]++;
+
+          return {
+            char: box.char,
+            charIndex: charIndex,
+            variantId: variantId,
+            x: box.x,
+            y: box.y,
+            width: box.width,
+            height: box.height,
+            // Support both old and new mask formats (migration will handle conversion)
+            brushMask: box.brushMask,
+            eraseMaskData: box.eraseMaskData,
+            eraseMask: box.eraseMask,
+            baseline_id: box.baseline_id,
+            baseline_offset: box.baseline_offset
+          };
         });
-        setEditedCharData(restoredEditedCharData);
+        // setBoxes will auto-migrate old formats to new eraseMask
+        setBoxes(restoredBoxes);
 
         setLetterSpacing(jsonData.letterSpacing || 0);
         setCharPadding(jsonData.charPadding || 0);

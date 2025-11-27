@@ -3,6 +3,7 @@ import { RotateCcw, Edit3 } from 'lucide-react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
 import ImageUploader from './ImageUploader';
 import TextInput from './TextInput';
+import RecentProjects from './RecentProjects';
 
 export default function SetupPanel() {
   const isAnnotating = useAnnotatorStore((state) => state.isAnnotating);
@@ -11,6 +12,7 @@ export default function SetupPanel() {
   const setIsAnnotating = useAnnotatorStore((state) => state.setIsAnnotating);
   const reset = useAnnotatorStore((state) => state.reset);
   const [showTextInput, setShowTextInput] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState(null);
 
   // Auto-start annotating when image is uploaded (even without text)
   useEffect(() => {
@@ -120,6 +122,12 @@ export default function SetupPanel() {
     );
   }
 
+  const handleProjectLoad = (projectId) => {
+    setCurrentProjectId(projectId);
+    // The project is automatically loaded by RecentProjects component
+    // and will trigger the auto-start via the useEffect above
+  };
+
   return (
     <div style={{
       maxWidth: '100%',
@@ -127,39 +135,34 @@ export default function SetupPanel() {
       padding: 'var(--padding-md)',
       height: '100vh',
       display: 'flex',
-      flexDirection: 'column',
+      gap: 'var(--padding-md)',
       boxSizing: 'border-box'
     }}>
-      {/* Header */}
-      <header className="te-panel" style={{
-        padding: 'var(--padding-md)',
-        marginBottom: 'var(--padding-md)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexShrink: 0
-      }}>
-        <div>
-          <h1 style={{
-            color: 'var(--te-black)',
-            fontSize: '16px',
-            fontVariationSettings: "'wght' 500",
-            marginBottom: '4px'
-          }}>
-            Character Box Annotator
-          </h1>
-          <div className="te-small-caps" style={{
-            color: 'var(--te-gray-dark)'
-          }}>
-            Draw boxes around characters to annotate text
-          </div>
-        </div>
-      </header>
-
-      {/* Setup Panel */}
+      {/* Left Panel - Recent Projects */}
       <div className="te-panel" style={{
         padding: 'var(--padding-md)',
-        marginBottom: 'var(--padding-md)',
+        flex: '0 0 320px',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        overflow: 'hidden'
+      }}>
+        <h3 style={{
+          margin: '0 0 12px 0',
+          fontSize: '14px',
+          fontVariationSettings: "'wght' 600",
+          color: 'var(--te-black)'
+        }}>
+          Recent Files
+        </h3>
+        <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+          <RecentProjects onProjectLoad={handleProjectLoad} />
+        </div>
+      </div>
+
+      {/* Right Panel - Upload & Setup */}
+      <div className="te-panel" style={{
+        padding: 'var(--padding-md)',
         flex: 1,
         display: 'flex',
         flexDirection: 'column',

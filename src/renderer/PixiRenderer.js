@@ -475,6 +475,9 @@ export class PixiRenderer {
 
       // Get all boxes from spatial index
       this.spatialIndex.tree.all().forEach(item => {
+        // Skip orphaned boxes (charIndex === -1)
+        if (item.charIndex === -1) return;
+
         const box = this.getBoxByIndex(item.boxIndex);
         if (!box) return;
 

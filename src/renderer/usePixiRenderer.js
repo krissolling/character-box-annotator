@@ -29,7 +29,6 @@ export function usePixiRenderer(options = {}) {
         // Export globally for debugging
         if (typeof window !== 'undefined') {
           window.__PIXI_RENDERER__ = renderer;
-          console.log('🔧 Debug: Renderer available at window.__PIXI_RENDERER__');
         }
 
         setIsReady(true);

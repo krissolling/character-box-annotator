@@ -180,6 +180,18 @@ body {
   border-color: var(--te-orange);
 }
 
+/* Warning state - tool is active but can't do anything (no character selected) */
+.te-tool-btn.warning {
+  background: var(--te-orange);
+  color: var(--te-white);
+  border-color: var(--te-orange);
+  opacity: 0.5;
+}
+
+.te-tool-btn.warning:hover {
+  opacity: 0.7;
+}
+
 /* Tool palette container */
 .te-tool-palette {
   display: flex;

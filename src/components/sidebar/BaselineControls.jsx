@@ -14,7 +14,13 @@ export default function BaselineControls() {
   }
 
   return (
-    <div className="te-panel">
+    <>
+      <style>{`
+        .baselines-container:hover .baseline-delete-btn {
+          opacity: 1 !important;
+        }
+      `}</style>
+      <div className="te-panel baselines-container">
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -32,14 +38,15 @@ export default function BaselineControls() {
         {baselines.map((baseline) => (
           <div
             key={`baseline-${baseline.id}`}
+            className="baseline-item"
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '4px 6px',
-              background: 'var(--te-gray-light)',
+              background: baseline.color,
               borderRadius: 'var(--radius-sm)',
-              borderLeft: `3px solid ${baseline.color}`
+              color: 'white'
             }}
           >
             <span className="te-small-caps">
@@ -48,15 +55,18 @@ export default function BaselineControls() {
 
             <button
               onClick={() => removeBaseline(baseline.id)}
+              className="baseline-delete-btn"
               style={{
                 padding: '2px',
-                color: 'var(--te-red)',
-                background: 'none',
+                color: 'white',
+                background: 'rgba(0, 0, 0, 0.2)',
                 border: 'none',
                 borderRadius: '2px',
                 cursor: 'pointer',
                 display: 'flex',
-                alignItems: 'center'
+                alignItems: 'center',
+                opacity: 0,
+                transition: 'opacity 0.2s'
               }}
               title="Remove baseline"
             >
@@ -69,14 +79,15 @@ export default function BaselineControls() {
         {angledBaselines.map((baseline) => (
           <div
             key={`angled-${baseline.id}`}
+            className="baseline-item"
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '4px 6px',
-              background: 'var(--te-gray-light)',
+              background: baseline.color,
               borderRadius: 'var(--radius-sm)',
-              borderLeft: `3px solid ${baseline.color}`
+              color: 'white'
             }}
           >
             <span className="te-small-caps">
@@ -85,15 +96,18 @@ export default function BaselineControls() {
 
             <button
               onClick={() => removeAngledBaseline(baseline.id)}
+              className="baseline-delete-btn"
               style={{
                 padding: '2px',
-                color: 'var(--te-red)',
-                background: 'none',
+                color: 'white',
+                background: 'rgba(0, 0, 0, 0.2)',
                 border: 'none',
                 borderRadius: '2px',
                 cursor: 'pointer',
                 display: 'flex',
-                alignItems: 'center'
+                alignItems: 'center',
+                opacity: 0,
+                transition: 'opacity 0.2s'
               }}
               title="Remove angled baseline"
             >
@@ -103,5 +117,6 @@ export default function BaselineControls() {
         ))}
       </div>
     </div>
+    </>
   );
 }

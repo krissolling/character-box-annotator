@@ -13,6 +13,8 @@ import CharacterEditModal from './modals/CharacterEditModal';
 import BaselinePickerModal from './modals/BaselinePickerModal';
 import useAnnotatorStore from '../store/useAnnotatorStore';
 import { processAutoSolveRegions, processSelectedLineGroups } from '../utils/autoSolve';
+import { sanitizeBox } from '../utils/sanitizeBox';
+import { useAutoSave } from '../hooks/useAutoSave';
 
 export default function MainAnnotator() {
   // Initialize canvasHeight from localStorage (persisted preview height)
@@ -30,6 +32,8 @@ export default function MainAnnotator() {
   const [isRunningAutoOCR, setIsRunningAutoOCR] = useState(false);
   const [showBaselinePicker, setShowBaselinePicker] = useState(false);
   const [detectedLineGroups, setDetectedLineGroups] = useState([]);
+  const [ocrResults, setOcrResults] = useState(null); // Store OCR results for user decision
+  const [showOcrPrompt, setShowOcrPrompt] = useState(false);
 
   // Get current tool info for tooltip
   const currentTool = useAnnotatorStore((state) => state.currentTool);
@@ -54,6 +58,10 @@ export default function MainAnnotator() {
   const setCurrentCharIndex = useAnnotatorStore((state) => state.setCurrentCharIndex);
   const setZoomLevel = useAnnotatorStore((state) => state.setZoomLevel);
   const setPanOffset = useAnnotatorStore((state) => state.setPanOffset);
+  const setBoxEraseMask = useAnnotatorStore((state) => state.setBoxEraseMask);
+
+  // Auto-save hook - saves project to IndexedDB when changes are made
+  useAutoSave();
 
   // Auto-run OCR when component mounts with image and text
   useEffect(() => {
@@ -65,27 +73,19 @@ export default function MainAnnotator() {
       // Check all skip conditions using the store's current state (not React state which may be stale)
       const shouldSkip = !state.image || !state.text || state.hasRunAutoOCR || state.boxes.length > 0;
 
-      console.log('🔍 OCR Check (atomic):', {
-        shouldSkip,
-        reasons: {
-          noImage: !state.image,
-          noText: !state.text,
-          hasRunAutoOCR: state.hasRunAutoOCR,
-          hasBoxes: state.boxes.length > 0
-        },
-        timestamp: Date.now()
-      });
-
       if (shouldSkip) {
-        console.log('⏭️ Skipping OCR');
+        return;
+      }
+
+      // Check if Tesseract is available
+      if (typeof window === 'undefined' || !window.Tesseract) {
+        console.log('⚠️ Tesseract not loaded yet, skipping auto-OCR');
         return;
       }
 
       // ATOMIC: Set flag immediately before any async work (prevents second run)
       useAnnotatorStore.setState({ hasRunAutoOCR: true });
       setIsRunningAutoOCR(true);
-
-      console.log('🚀 Auto-running OCR on full image...');
 
       try {
         // Create a region covering the entire image
@@ -107,22 +107,53 @@ export default function MainAnnotator() {
           true // returnLineGrouped = true
         );
 
-        console.log(`📝 Detected ${lineGroups?.length || 0} text lines`);
 
-        // If multiple lines detected, show picker
-        if (lineGroups && lineGroups.length > 1) {
-          setDetectedLineGroups(lineGroups);
-          setShowBaselinePicker(true);
-          setIsRunningAutoOCR(false);
-          return;
-        }
+        // Store results and show prompt to user
+        if (lineGroups && lineGroups.length > 0) {
+          console.log('🔍 OCR lineGroups:', lineGroups);
 
-        // If only one line or no lines, process directly
-        if (lineGroups && lineGroups.length === 1) {
-          handleLineSelection(lineGroups);
+          // Count characters and words from line groups
+          let totalChars = 0;
+          let totalWords = 0;
+          let inStringCount = 0;
+          let notInStringCount = 0;
+
+          lineGroups.forEach((group, idx) => {
+            console.log(`  Line ${idx}:`, {
+              hasSymbols: !!group.symbols,
+              symbolCount: group.symbols?.length,
+              text: group.text,
+              group
+            });
+            // lineGroups have 'symbols' array, not 'boxes'
+            if (group && group.symbols && Array.isArray(group.symbols)) {
+              totalChars += group.symbols.length;
+
+              // Count how many are in the target string
+              group.symbols.forEach(symbol => {
+                if (uniqueChars.includes(symbol.text)) {
+                  inStringCount++;
+                } else {
+                  notInStringCount++;
+                }
+              });
+            }
+          });
+          // Rough word count: estimate ~5 chars per word
+          totalWords = Math.max(1, Math.ceil(totalChars / 5));
+
+          console.log(`📊 OCR Summary: ${totalChars} chars, ~${totalWords} words, ${lineGroups.length} lines`);
+
+          setOcrResults({
+            lineGroups,
+            charCount: totalChars,
+            inStringCount,
+            notInStringCount,
+            lineCount: lineGroups.length
+          });
+          setShowOcrPrompt(true);
         } else {
           // No lines detected
-          setCurrentCharIndex(0);
           console.log('⚠️ No text lines detected');
         }
       } catch (error) {
@@ -135,6 +166,18 @@ export default function MainAnnotator() {
     runAutoOCR();
   }, [image, text, hasRunAutoOCR, boxes.length, uniqueChars, imageRotation, baselines.length]);
 
+  // Watch for manual OCR trigger
+  const triggerFullOCR = useAnnotatorStore((state) => state.triggerFullOCR);
+  const resetOCRTrigger = useAnnotatorStore((state) => state.resetOCRTrigger);
+
+  useEffect(() => {
+    if (!triggerFullOCR || !image) return;
+
+    // Reset trigger and re-run OCR
+    resetOCRTrigger();
+    useAnnotatorStore.setState({ hasRunAutoOCR: false });
+  }, [triggerFullOCR, image, resetOCRTrigger]);
+
   // Handle line selection from picker
   const handleLineSelection = (selectedLines) => {
     setShowBaselinePicker(false);
@@ -145,8 +188,6 @@ export default function MainAnnotator() {
       return;
     }
 
-    console.log(`✅ Processing ${selectedLines.length} selected line(s)`);
-
     const { boxes: newBoxes, baselines: newBaselines } = processSelectedLineGroups(
       selectedLines,
       uniqueChars,
@@ -154,8 +195,25 @@ export default function MainAnnotator() {
       image
     );
 
-    // Add boxes
+    // Add boxes and auto-sanitize OCR boxes
+    const currentBoxCount = useAnnotatorStore.getState().boxes.length;
     newBoxes.forEach((box) => addBox(box));
+
+    // Auto-sanitize each new box
+    if (image) {
+      const updatedBoxes = useAnnotatorStore.getState().boxes;
+      for (let i = currentBoxCount; i < updatedBoxes.length; i++) {
+        const box = updatedBoxes[i];
+        try {
+          const result = sanitizeBox(image, box);
+          if (result.hasChanges) {
+            setBoxEraseMask(i, result.eraseMask);
+          }
+        } catch (err) {
+          console.warn(`⚠️ Failed to sanitize box for '${box.char}':`, err);
+        }
+      }
+    }
 
     // Add baselines (only if no baselines exist yet)
     if (newBaselines.length > 0 && baselines.length === 0) {
@@ -253,6 +311,29 @@ export default function MainAnnotator() {
   const handlePickerCancel = () => {
     setShowBaselinePicker(false);
     setDetectedLineGroups([]);
+    setCurrentCharIndex(0);
+  };
+
+  // Handle OCR prompt accept
+  const handleOcrAccept = () => {
+    setShowOcrPrompt(false);
+    if (!ocrResults) return;
+
+    // If multiple lines, show line picker
+    if (ocrResults.lineGroups.length > 1) {
+      setDetectedLineGroups(ocrResults.lineGroups);
+      setShowBaselinePicker(true);
+    } else {
+      // Single line, process directly
+      handleLineSelection(ocrResults.lineGroups);
+    }
+    setOcrResults(null);
+  };
+
+  // Handle OCR prompt dismiss
+  const handleOcrDismiss = () => {
+    setShowOcrPrompt(false);
+    setOcrResults(null);
     setCurrentCharIndex(0);
   };
 
@@ -505,6 +586,67 @@ export default function MainAnnotator() {
         onSelect={handleLineSelection}
         onCancel={handlePickerCancel}
       />
+
+      {/* OCR Results Prompt */}
+      {showOcrPrompt && ocrResults && (
+        <div className="te-panel" style={{
+          position: 'absolute',
+          top: '72px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          zIndex: 11,
+          minWidth: '300px'
+        }}>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            padding: '8px'
+          }}>
+            <div style={{ fontSize: '12px', fontVariationSettings: "'wght' 600" }}>
+              Auto-OCR found:
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--te-gray-dark)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div>• {ocrResults.charCount} character{ocrResults.charCount !== 1 ? 's' : ''} found, {' '}
+                <span style={{
+                  background: 'var(--te-green)',
+                  color: 'var(--te-black)',
+                  padding: '2px 6px',
+                  borderRadius: '8px',
+                  fontSize: '10px',
+                  fontVariationSettings: "'wght' 600"
+                }}>
+                  {ocrResults.inStringCount} in string
+                </span>
+              </div>
+              <div>• {ocrResults.lineCount} line{ocrResults.lineCount !== 1 ? 's' : ''}</div>
+            </div>
+            <div style={{ fontSize: '10px', color: 'var(--te-gray-dark)', marginTop: '4px' }}>
+              Use these results?
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '4px', padding: '0 8px 8px 8px' }}>
+            <button
+              onClick={handleOcrDismiss}
+              className="te-btn te-btn-secondary"
+              style={{ flex: 1, fontSize: '11px', padding: '6px' }}
+            >
+              Dismiss
+            </button>
+            <button
+              onClick={handleOcrAccept}
+              className="te-btn te-btn-primary"
+              style={{ flex: 1, fontSize: '11px', padding: '6px' }}
+            >
+              {ocrResults.lineCount > 1 ? 'Choose Lines' : 'Use Results'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

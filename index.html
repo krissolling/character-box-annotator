@@ -7,6 +7,12 @@
     <title>Character Box Annotator</title>
     <!-- Tesseract.js v6 from CDN -->
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js'></script>
+    <script type="module">
+      // react-grab: dev-only component inspector
+      if (import.meta.env.DEV) {
+        import("react-grab");
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

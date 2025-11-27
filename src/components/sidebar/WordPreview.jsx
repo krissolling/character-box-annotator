@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import useAnnotatorStore from '../../store/useAnnotatorStore';
+import { eraseMaskToImageData } from '../../utils/maskUtils';
 
 export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
   const canvasRef = useRef(null);
@@ -15,12 +16,10 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
   const [previewKerning, setPreviewKerning] = useState(null); // { index, value } during drag
   const previewKerningRef = useRef(null); // Ref to track current preview for mouseup handler
   const [handleRenderTrigger, setHandleRenderTrigger] = useState(0);
-  const [hoveredCharPosition, setHoveredCharPosition] = useState(null);
-  const [variantPickerOpen, setVariantPickerOpen] = useState(false);
-  const [variantPickerData, setVariantPickerData] = useState(null); // { position, char, charIndex, currentVariant, availableVariants }
   const [isHoveringPreview, setIsHoveringPreview] = useState(false);
-  const isHoveringButtonRef = useRef(false);
-  const hoverClearTimeoutRef = useRef(null);
+  const [globalKerningDelta, setGlobalKerningDelta] = useState(0);
+  const [isDraggingGlobalKerning, setIsDraggingGlobalKerning] = useState(false);
+  const globalKerningStartXRef = useRef(0);
 
   const image = useAnnotatorStore((state) => state.image);
   const boxes = useAnnotatorStore((state) => state.boxes);
@@ -39,10 +38,7 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
   const levelsAdjustment = useAnnotatorStore((state) => state.levelsAdjustment);
   const updateFilter = useAnnotatorStore((state) => state.updateFilter);
   const updateKerning = useAnnotatorStore((state) => state.updateKerning);
-  const selectedVariants = useAnnotatorStore((state) => state.selectedVariants);
-  const textPositionVariants = useAnnotatorStore((state) => state.textPositionVariants);
-  const setPositionVariant = useAnnotatorStore((state) => state.setPositionVariant);
-  const clearPositionVariant = useAnnotatorStore((state) => state.clearPositionVariant);
+  const applyGlobalKerningDelta = useAnnotatorStore((state) => state.applyGlobalKerningDelta);
   const uniqueChars = useAnnotatorStore((state) => state.uniqueChars);
   const caseSensitive = useAnnotatorStore((state) => state.caseSensitive);
 
@@ -216,60 +212,6 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // Track which character is being hovered (for variant picker button)
-    if (!eyedropperActive && !draggingKerningIndex) {
-      const naturalWidth = parseFloat(canvas.dataset.naturalWidth || canvas.width);
-      const naturalHeight = parseFloat(canvas.dataset.naturalHeight || canvas.height);
-
-      const canvasAspect = naturalWidth / naturalHeight;
-      const rectAspect = rect.width / rect.height;
-      let renderedWidth, renderedHeight, offsetX, offsetY;
-
-      if (canvasAspect > rectAspect) {
-        renderedWidth = rect.width;
-        renderedHeight = rect.width / canvasAspect;
-        offsetX = 0;
-        offsetY = (rect.height - renderedHeight) / 2;
-      } else {
-        renderedWidth = rect.height * canvasAspect;
-        renderedHeight = rect.height;
-        offsetX = (rect.width - renderedWidth) / 2;
-        offsetY = 0;
-      }
-
-      const scaleX = naturalWidth / renderedWidth;
-      const scaleY = naturalHeight / renderedHeight;
-      const canvasX = (x - offsetX) * scaleX;
-      const canvasY = (y - offsetY) * scaleY;
-
-      // Find which character is being hovered
-      let foundPosition = null;
-      for (let i = 0; i < charPositionsRef.current.length; i++) {
-        const pos = charPositionsRef.current[i];
-        if (canvasX >= pos.x && canvasX <= pos.x + pos.width &&
-            canvasY >= pos.y && canvasY <= pos.y + pos.height) {
-          foundPosition = pos.position;
-          break;
-        }
-      }
-
-      // Clear any pending timeout
-      if (hoverClearTimeoutRef.current) {
-        clearTimeout(hoverClearTimeoutRef.current);
-        hoverClearTimeoutRef.current = null;
-      }
-
-      if (foundPosition !== null) {
-        // Immediately set hover when over a character
-        setHoveredCharPosition(foundPosition);
-      } else if (!isHoveringButtonRef.current) {
-        // Add a small delay before clearing to allow moving to button
-        hoverClearTimeoutRef.current = setTimeout(() => {
-          setHoveredCharPosition(null);
-        }, 100); // 100ms grace period
-      }
-    }
-
     // Eyedropper cursor follower
     if (eyedropperActive) {
       const cursorFollower = document.getElementById('eyedropper-cursor');
@@ -337,47 +279,31 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     previewKerningRef.current = null;
   };
 
-  // Variant picker handlers
-  const openVariantPicker = (position) => {
-    const char = text[position];
-    const charIndex = uniqueChars.indexOf(char);
-    if (charIndex === -1) return;
-
-    // Get all boxes for this character
-    const availableVariants = boxes.filter(box => box.charIndex === charIndex);
-    if (availableVariants.length <= 1) return; // No need for picker if only one variant
-
-    // Get current variant for this position
-    const currentVariant = textPositionVariants[position] !== undefined
-      ? textPositionVariants[position]
-      : (selectedVariants[charIndex] || 0);
-
-    setVariantPickerData({
-      position,
-      char,
-      charIndex,
-      currentVariant,
-      availableVariants
-    });
-    setVariantPickerOpen(true);
+  // Global kerning spacer handlers
+  const handleGlobalKerningMouseDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingGlobalKerning(true);
+    globalKerningStartXRef.current = e.clientY; // Using Y for vertical slider
+    setGlobalKerningDelta(0);
   };
 
-  const handleVariantSelect = (variantId) => {
-    if (!variantPickerData) return;
+  const handleGlobalKerningMouseMove = (e) => {
+    if (!isDraggingGlobalKerning) return;
+    // Calculate delta based on vertical drag distance (inverted: up = positive/more spacing)
+    // Sensitivity: ~1px kerning per 2px of mouse movement
+    const deltaY = globalKerningStartXRef.current - e.clientY; // Inverted so up = positive
+    const kerningDelta = Math.round(deltaY / 2);
+    setGlobalKerningDelta(kerningDelta);
+  };
 
-    const { position, charIndex } = variantPickerData;
-    const globalDefault = selectedVariants[charIndex] || 0;
-
-    if (variantId === globalDefault) {
-      // If selecting the global default, clear the override
-      clearPositionVariant(position);
-    } else {
-      // Set position-specific override
-      setPositionVariant(position, variantId);
+  const handleGlobalKerningMouseUp = () => {
+    if (isDraggingGlobalKerning && globalKerningDelta !== 0 && text && text.length > 1) {
+      // Apply the delta to all kerning adjustments
+      applyGlobalKerningDelta(globalKerningDelta, text.length);
     }
-
-    setVariantPickerOpen(false);
-    setVariantPickerData(null);
+    setIsDraggingGlobalKerning(false);
+    setGlobalKerningDelta(0); // Reset to center
   };
 
   // Add global mouse event listeners for kerning drag
@@ -392,14 +318,17 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     }
   }, [draggingKerningIndex, dragStartX, dragStartKerning, kerningAdjustments]);
 
-  // Cleanup hover timeout on unmount
+  // Add global mouse event listeners for global kerning spacer drag
   useEffect(() => {
-    return () => {
-      if (hoverClearTimeoutRef.current) {
-        clearTimeout(hoverClearTimeoutRef.current);
-      }
-    };
-  }, []);
+    if (isDraggingGlobalKerning) {
+      window.addEventListener('mousemove', handleGlobalKerningMouseMove);
+      window.addEventListener('mouseup', handleGlobalKerningMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleGlobalKerningMouseMove);
+        window.removeEventListener('mouseup', handleGlobalKerningMouseUp);
+      };
+    }
+  }, [isDraggingGlobalKerning, globalKerningDelta, text]);
 
   // Handle eyedropper cursor elements
   useEffect(() => {
@@ -508,7 +437,7 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     renderCanvas();
     // Trigger re-render of kerning handles after canvas is rendered
     setHandleRenderTrigger(prev => prev + 1);
-  }, [image, boxes, letterSpacing, charPadding, kerningAdjustments, previewKerning, baselines, angledBaselines, editedCharData, imageRotation, imageFilters, levelsAdjustment, debugClickAreas, lastClickPos, text, selectedVariants, textPositionVariants, uniqueChars, caseSensitive]);
+  }, [image, boxes, letterSpacing, charPadding, kerningAdjustments, previewKerning, baselines, angledBaselines, editedCharData, imageRotation, imageFilters, levelsAdjustment, debugClickAreas, lastClickPos, text, uniqueChars, caseSensitive, globalKerningDelta, isDraggingGlobalKerning]);
 
   // Apply advanced color adjustments (shadows/highlights) to canvas
   const applyAdvancedAdjustments = (ctx, width, height) => {
@@ -560,15 +489,18 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
     // Allow rendering with no boxes - will show placeholders for all characters
     if (!text || text.length === 0) return;
 
-    console.time('⏱️ renderCanvas');
-    console.log(`🎨 renderCanvas called for text: "${text}" (${text.length} chars, ${boxes.length} boxes)`);
-
     // Helper to get effective kerning (preview during drag, store value otherwise)
     const getKerning = (index) => {
+      let value = kerningAdjustments[index] || 0;
+      // Add individual kerning preview if dragging that handle
       if (previewKerning && previewKerning.index === index) {
-        return previewKerning.value;
+        value = previewKerning.value;
       }
-      return kerningAdjustments[index] || 0;
+      // Add global kerning delta preview if dragging global slider
+      if (isDraggingGlobalKerning && globalKerningDelta !== 0) {
+        value += globalKerningDelta;
+      }
+      return value;
     };
 
     // Use rotated image if available, otherwise use original
@@ -579,7 +511,6 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
 
     // Instead of using boxes directly, create an array based on the text string
     // This allows us to show "HELLO" with two L's instead of just "HELO"
-    // Now also respects per-position variants (overrides) and global selected variants
     // Keep ALL characters (even without boxes) to show placeholders
     const textChars = text.split('');
     const displayBoxes = textChars.map((char, position) => {
@@ -596,23 +527,18 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
         }
       }
 
-      // Check for per-position override first, then fall back to global selected variant
-      const selectedVariantId = textPositionVariants[position] !== undefined
-        ? textPositionVariants[position]
-        : (selectedVariants[charIndex] || 0);
-
-      // Find the box with matching charIndex and variantId
+      // Find the box for this character (one box per character now)
       let box = charIndex !== -1
-        ? boxes.find(box => box.charIndex === charIndex && box.variantId === selectedVariantId)
+        ? boxes.find(box => box.charIndex === charIndex)
         : undefined;
 
       // Case-insensitive fallback: if no box found, search by character directly (including orphaned boxes)
       if (!box && !caseSensitive) {
         // First try exact char match (for orphaned boxes with this char)
-        box = boxes.find(b => b.char === char && (b.variantId === 0 || b.variantId === undefined));
+        box = boxes.find(b => b.char === char);
         // Then try opposite case
         if (!box) {
-          box = boxes.find(b => b.char === oppositeCase && (b.variantId === 0 || b.variantId === undefined));
+          box = boxes.find(b => b.char === oppositeCase);
           if (box) usedSubstitute = true;
         }
       }
@@ -686,6 +612,7 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
 
     // Calculate canvas height based on baseline alignment
     let canvasHeight = maxHeight;
+    const canvasPadding = 20;
 
     if (baselinedBoxes.length > 0) {
       // Find maximum offset above baseline (ensures no character gets cut off)
@@ -715,10 +642,57 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
       }
     }
 
-    // Add some padding to the canvas
-    const canvasPadding = 20;
+    // PRE-PASS: Calculate all character Y positions to find actual bounds
+    // This ensures tall characters above baseline don't get cut off
+    let minYPos = canvasPadding;
+    let maxYPosBottom = canvasPadding + canvasHeight;
+    let tempCurrentX = canvasPadding;
+
+    displayBoxes.forEach((item, index) => {
+      const { box } = item;
+      let boxWidth, boxHeight;
+      if (box) {
+        boxWidth = box.width + charPadding * 2;
+        boxHeight = box.height + charPadding * 2;
+      } else {
+        boxWidth = avgBoxWidth + charPadding * 2;
+        boxHeight = avgBoxHeight + charPadding * 2;
+      }
+
+      let yPos = canvasPadding;
+      if (box && box.baseline_offset !== undefined && unifiedBaselineY > 0) {
+        let baselineYAtCurrentPos = unifiedBaselineY;
+        if (hasAngledBaseline) {
+          const offsetX = tempCurrentX - canvasPadding;
+          baselineYAtCurrentPos = unifiedBaselineY + (offsetX * baselineSlope);
+        }
+        yPos = canvasPadding + baselineYAtCurrentPos - box.baseline_offset;
+      } else if (unifiedBaselineY > 0) {
+        let baselineYAtCurrentPos = unifiedBaselineY;
+        if (hasAngledBaseline) {
+          const offsetX = tempCurrentX - canvasPadding;
+          baselineYAtCurrentPos = unifiedBaselineY + (offsetX * baselineSlope);
+        }
+        yPos = canvasPadding + baselineYAtCurrentPos - boxHeight;
+      }
+
+      minYPos = Math.min(minYPos, yPos);
+      maxYPosBottom = Math.max(maxYPosBottom, yPos + boxHeight);
+
+      tempCurrentX += boxWidth + letterSpacing;
+      if (index < displayBoxes.length - 1) {
+        tempCurrentX += getKerning(index);
+      }
+    });
+
+    // Calculate additional offset needed if content extends above canvasPadding
+    const yOffset = minYPos < canvasPadding ? canvasPadding - minYPos : 0;
+
+    // Adjust canvas height to fit all content
+    canvasHeight = maxYPosBottom - minYPos + canvasPadding;
+
+    // Add padding to width and height
     totalWidth += canvasPadding * 2;
-    canvasHeight += canvasPadding * 2;
 
     // Set canvas internal resolution
     canvas.width = totalWidth * dpr;
@@ -745,7 +719,7 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
 
       if (hasAngledBaseline) {
         // Draw angled baseline (green)
-        const startY = canvasPadding + unifiedBaselineY;
+        const startY = canvasPadding + unifiedBaselineY + yOffset;
         const endY = startY + (totalWidth - canvasPadding * 2) * baselineSlope;
         ctx.moveTo(canvasPadding, startY);
         ctx.lineTo(totalWidth - canvasPadding, endY);
@@ -757,7 +731,7 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
         ctx.fillText('ANGLED BASELINE', canvasPadding + 5, startY - 5);
       } else {
         // Draw horizontal baseline (blue)
-        const y = canvasPadding + unifiedBaselineY;
+        const y = canvasPadding + unifiedBaselineY + yOffset;
         ctx.moveTo(canvasPadding, y);
         ctx.lineTo(totalWidth - canvasPadding, y);
 
@@ -817,6 +791,9 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
         // No baseline at all - center vertically in canvas
         yPos = (canvasHeight - boxHeight) / 2;
       }
+
+      // Apply yOffset to ensure content doesn't get cut off at the top
+      yPos += yOffset;
 
       // Draw character crop from original image or edited version, OR placeholder
       try {
@@ -893,100 +870,68 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
           charPadding, charPadding, box.width, box.height
         );
 
-        // Apply brush mask if it exists (for clipping)
-        if (box.brushMask && box.brushMask.length > 0) {
-          const totalPoints = box.brushMask.reduce((sum, stroke) => sum + stroke.points.length, 0);
-          console.log(`🖌️ Brush mask for "${box.char}": ${box.brushMask.length} strokes, ${totalPoints} total points`);
-          // Create mask using offscreen canvas to properly handle stroke width
-          const maskCanvas = document.createElement('canvas');
-          maskCanvas.width = boxWidth;
-          maskCanvas.height = boxHeight;
-          const maskCtx = maskCanvas.getContext('2d');
+        // Apply eraseMask if it exists (unified mask format - single channel pixel array)
+        // This handles all mask sources: brush tool, sanitize, and manual editing
+        // Masks use absolute image coordinates (offsetX, offsetY)
+        if (box.eraseMask) {
+          const { pixels, width: maskWidth, height: maskHeight, offsetX, offsetY } = box.eraseMask;
 
-          // Build a combined path from all brush strokes
-          maskCtx.fillStyle = 'black';
-          maskCtx.strokeStyle = 'black';
+          // Calculate which part of the mask intersects with the current box
+          // Mask is at (offsetX, offsetY) in absolute image coords
+          // Box is at (box.x, box.y) in absolute image coords
+          const maskStartX = offsetX !== undefined ? offsetX : box.x; // Fallback for old masks without offset
+          const maskStartY = offsetY !== undefined ? offsetY : box.y;
+          const maskEndX = maskStartX + maskWidth;
+          const maskEndY = maskStartY + maskHeight;
 
-          // First, stroke each path with proper width to create the outline
-          box.brushMask.forEach(stroke => {
-            maskCtx.lineWidth = stroke.size;
-            maskCtx.lineCap = 'round';
-            maskCtx.lineJoin = 'round';
-
-            maskCtx.beginPath();
-            stroke.points.forEach((point, i) => {
-              const boxRelativeX = point.x - box.x;
-              const boxRelativeY = point.y - box.y;
-              const x = charPadding + boxRelativeX;
-              const y = charPadding + boxRelativeY;
-              if (i === 0) {
-                maskCtx.moveTo(x, y);
-              } else {
-                maskCtx.lineTo(x, y);
-              }
-            });
-            maskCtx.stroke();
-
-            // Add circles at each point for full coverage
-            stroke.points.forEach(point => {
-              const boxRelativeX = point.x - box.x;
-              const boxRelativeY = point.y - box.y;
-              const x = charPadding + boxRelativeX;
-              const y = charPadding + boxRelativeY;
-              maskCtx.beginPath();
-              maskCtx.arc(x, y, stroke.size / 2, 0, Math.PI * 2);
-              maskCtx.fill();
-            });
+          console.log(`📦 Rendering mask for char "${box.char}":`, {
+            maskPosition: { x: maskStartX, y: maskStartY },
+            maskSize: { w: maskWidth, h: maskHeight },
+            boxPosition: { x: box.x, y: box.y },
+            boxSize: { w: box.width, h: box.height }
           });
 
-          // Now create a unified path from all strokes and fill the interior
-          maskCtx.beginPath();
-          box.brushMask.forEach(stroke => {
-            if (stroke.points.length > 0) {
-              const firstPoint = stroke.points[0];
-              const boxRelativeX = firstPoint.x - box.x;
-              const boxRelativeY = firstPoint.y - box.y;
-              maskCtx.moveTo(charPadding + boxRelativeX, charPadding + boxRelativeY);
+          // Calculate intersection
+          const intersectX = Math.max(maskStartX, box.x);
+          const intersectY = Math.max(maskStartY, box.y);
+          const intersectEndX = Math.min(maskEndX, box.x + box.width);
+          const intersectEndY = Math.min(maskEndY, box.y + box.height);
 
-              stroke.points.slice(1).forEach(point => {
-                const boxRelativeX = point.x - box.x;
-                const boxRelativeY = point.y - box.y;
-                maskCtx.lineTo(charPadding + boxRelativeX, charPadding + boxRelativeY);
-              });
-            }
+          const intersectWidth = intersectEndX - intersectX;
+          const intersectHeight = intersectEndY - intersectY;
+
+          console.log(`  ✂️ Intersection:`, {
+            intersectPos: { x: intersectX, y: intersectY },
+            intersectSize: { w: intersectWidth, h: intersectHeight }
           });
-          // Close the path and fill interior using nonzero winding rule
-          maskCtx.closePath();
-          maskCtx.fill('nonzero');
 
-          // Apply mask using destination-in (keeps only pixels where mask is opaque)
-          tempCtx.globalCompositeOperation = 'destination-in';
-          tempCtx.drawImage(maskCanvas, 0, 0);
-          tempCtx.globalCompositeOperation = 'source-over';
-        }
+          if (intersectWidth > 0 && intersectHeight > 0) {
+            // Calculate source coordinates within the mask
+            const srcX = intersectX - maskStartX;
+            const srcY = intersectY - maskStartY;
 
-        // Apply erase mask if it exists (from character editing) - BEFORE drawing to main canvas
-        // This ensures transparent areas don't reveal white background when kerned
-        if (originalBoxIndex !== -1 && editedCharData[originalBoxIndex]) {
-          const editData = editedCharData[originalBoxIndex];
-          const eraseMask = typeof editData === 'string' ? null : editData.eraseMask;
+            // Calculate destination coordinates within the box (relative to charPadding)
+            const dstX = intersectX - box.x + charPadding;
+            const dstY = intersectY - box.y + charPadding;
 
-          if (eraseMask && eraseMask.length > 0) {
-            eraseMask.forEach(stroke => {
-              tempCtx.globalCompositeOperation = 'destination-out';
-              tempCtx.fillStyle = 'rgba(0,0,0,1)';
-              stroke.points.forEach(point => {
-                // Convert from absolute image coordinates to box-relative coordinates
-                const boxRelativeX = point.x - box.x;
-                const boxRelativeY = point.y - box.y;
-                const x = charPadding + boxRelativeX;
-                const y = charPadding + boxRelativeY;
-                tempCtx.beginPath();
-                tempCtx.arc(x, y, stroke.size / 2, 0, Math.PI * 2);
-                tempCtx.fill();
-              });
-              tempCtx.globalCompositeOperation = 'source-over';
-            });
+            // Create a canvas with the full mask
+            const maskCanvas = document.createElement('canvas');
+            maskCanvas.width = maskWidth;
+            maskCanvas.height = maskHeight;
+            const maskCtx = maskCanvas.getContext('2d');
+
+            // Convert single-channel mask to RGBA ImageData
+            const imageData = eraseMaskToImageData(box.eraseMask);
+            maskCtx.putImageData(imageData, 0, 0);
+
+            // Apply only the intersecting portion of the mask
+            tempCtx.globalCompositeOperation = 'destination-out';
+            tempCtx.drawImage(
+              maskCanvas,
+              srcX, srcY, intersectWidth, intersectHeight,  // Source rect in mask
+              dstX, dstY, intersectWidth, intersectHeight   // Dest rect in tempCanvas
+            );
+            tempCtx.globalCompositeOperation = 'source-over';
           }
         }
 
@@ -1139,7 +1084,6 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
         ctx.stroke();
       }
     }
-    console.timeEnd('⏱️ renderCanvas');
   };
 
   // Show empty state only if no image OR no text string
@@ -1162,7 +1106,6 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
         ref={canvasContainerRef}
         onMouseEnter={() => setIsHoveringPreview(true)}
         onMouseLeave={() => {
-          setHoveredCharPosition(null);
           setIsHoveringPreview(false);
         }}
         style={{
@@ -1259,255 +1202,80 @@ export default function WordPreview({ eyedropperActive, setEyedropperActive }) {
           );
         })}
 
-        {/* Variant picker hover button */}
-        {hoveredCharPosition !== null && (() => {
-          const char = text[hoveredCharPosition];
-          const charIndex = uniqueChars.indexOf(char);
-          if (charIndex === -1) {
-            return null;
-          }
+      </div>
 
-          const availableVariants = boxes.filter(box => box.charIndex === charIndex);
-          if (availableVariants.length <= 1) {
-            return null; // Only show if multiple variants exist
-          }
-
-          const charPos = charPositionsRef.current.find(p => p.position === hoveredCharPosition);
-          if (!charPos) {
-            return null;
-          }
-
-          const canvas = canvasRef.current;
-          if (!canvas) {
-            return null;
-          }
-
-          const rect = canvas.getBoundingClientRect();
-          const naturalWidth = parseFloat(canvas.dataset.naturalWidth || canvas.width);
-          const naturalHeight = parseFloat(canvas.dataset.naturalHeight || canvas.height);
-
-          const canvasAspect = naturalWidth / naturalHeight;
-          const rectAspect = rect.width / rect.height;
-          let renderedWidth, renderedHeight, offsetX, offsetY;
-
-          if (canvasAspect > rectAspect) {
-            renderedWidth = rect.width;
-            renderedHeight = rect.width / canvasAspect;
-            offsetX = 0; // Relative to parent, not page
-            offsetY = (rect.height - renderedHeight) / 2;
-          } else {
-            renderedWidth = rect.height * canvasAspect;
-            renderedHeight = rect.height;
-            offsetX = (rect.width - renderedWidth) / 2;
-            offsetY = 0; // Relative to parent, not page
-          }
-
-          const scaleX = renderedWidth / naturalWidth;
-          const scaleY = renderedHeight / naturalHeight;
-
-          const displayX = offsetX + charPos.x * scaleX + (charPos.width * scaleX / 2);
-          const displayY = offsetY + charPos.y * scaleY - 8;
-
-          // Get currently selected variant for this position
-          const currentSelectedVariantId = textPositionVariants[hoveredCharPosition] !== undefined
-            ? textPositionVariants[hoveredCharPosition]
-            : (selectedVariants[charIndex] || 0);
-
-          return (
+      {/* Global kerning spacer - vertical one-time adjustment slider (show on hover or while dragging) */}
+      {text && text.length > 1 && (isHoveringPreview || isDraggingGlobalKerning) && (
+        <div
+          onMouseEnter={() => setIsHoveringPreview(true)}
+          onMouseLeave={() => {
+            if (!isDraggingGlobalKerning) {
+              setIsHoveringPreview(false);
+            }
+          }}
+          style={{
+            position: 'absolute',
+            top: '50%',
+            right: '8px',
+            transform: 'translateY(-50%)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '6px',
+            zIndex: 20,
+            userSelect: 'none'
+          }}
+        >
+          <span style={{
+            fontSize: '11px',
+            fontVariationSettings: "'wght' 350",
+            color: 'var(--te-gray-dark)',
+            lineHeight: 1
+          }}>+</span>
+          <div
+            onMouseDown={handleGlobalKerningMouseDown}
+            style={{
+              width: '24px',
+              height: '80px',
+              position: 'relative',
+              cursor: 'ns-resize',
+              touchAction: 'none'
+            }}
+            title={isDraggingGlobalKerning ? `Adjust all kerning: ${globalKerningDelta > 0 ? '+' : ''}${globalKerningDelta}px` : 'Drag to adjust all kerning'}
+          >
+            {/* Vertical track */}
             <div
               style={{
                 position: 'absolute',
-                left: `${displayX}px`,
-                top: `${displayY}px`,
-                transform: 'translate(-50%, -100%)',
-                display: 'flex',
-                gap: '4px',
-                pointerEvents: 'auto',
-                zIndex: 1000
+                inset: 0,
+                borderRadius: '2px',
+                background: 'transparent'
               }}
-              onMouseEnter={(e) => {
-                isHoveringButtonRef.current = true;
-                // Cancel any pending clear timeout
-                if (hoverClearTimeoutRef.current) {
-                  clearTimeout(hoverClearTimeoutRef.current);
-                  hoverClearTimeoutRef.current = null;
-                }
-              }}
-              onMouseLeave={(e) => {
-                isHoveringButtonRef.current = false;
-                // Clear hover state when leaving button
-                setHoveredCharPosition(null);
-              }}
-            >
-              {availableVariants.map((box) => (
-                <VariantHoverThumbnail
-                  key={box.variantId}
-                  box={box}
-                  isSelected={currentSelectedVariantId === box.variantId}
-                  onClick={() => {
-                    if (currentSelectedVariantId === box.variantId) {
-                      // If clicking current selection, clear the override
-                      clearPositionVariant(hoveredCharPosition);
-                    } else {
-                      // Set new variant for this position
-                      setPositionVariant(hoveredCharPosition, box.variantId);
-                    }
-                  }}
-                  renderFn={renderCharacterThumbnail}
-                />
-              ))}
-            </div>
-          );
-        })()}
-
-        {/* Variant Picker Popup */}
-        {variantPickerOpen && variantPickerData && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0,0,0,0.5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000
-            }}
-            onClick={() => {
-              setVariantPickerOpen(false);
-              setVariantPickerData(null);
-            }}
-          >
+            />
+            {/* Vertical thumb */}
             <div
-              onClick={(e) => e.stopPropagation()}
               style={{
-                background: 'white',
-                borderRadius: '12px',
-                padding: '20px',
-                maxWidth: '500px',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+                position: 'absolute',
+                left: '6px',
+                width: '12px',
+                height: '20px',
+                top: `calc(50% - ${Math.max(-30, Math.min(30, globalKerningDelta))}px)`,
+                transform: 'translateY(-50%)',
+                borderRadius: '2px',
+                background: isDraggingGlobalKerning ? '#2196F3' : '#FF9800',
+                transition: isDraggingGlobalKerning ? 'none' : 'top 0.15s ease-out'
               }}
-            >
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 600 }}>
-                Select Variant for '{variantPickerData.char}' at position {variantPickerData.position}
-              </h3>
-
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                {variantPickerData.availableVariants.map((variant) => {
-                  const isGlobalDefault = (selectedVariants[variantPickerData.charIndex] || 0) === variant.variantId;
-                  const isCurrent = variantPickerData.currentVariant === variant.variantId;
-                  const isOverride = textPositionVariants[variantPickerData.position] === variant.variantId;
-
-                  return (
-                    <div
-                      key={variant.variantId}
-                      onClick={() => handleVariantSelect(variant.variantId)}
-                      style={{
-                        border: isCurrent ? '3px solid #2196F3' : '2px solid #ddd',
-                        borderRadius: '8px',
-                        padding: '8px',
-                        cursor: 'pointer',
-                        background: isCurrent ? '#E3F2FD' : 'white',
-                        transition: 'all 0.2s',
-                        position: 'relative'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isCurrent) e.currentTarget.style.borderColor = '#2196F3';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isCurrent) e.currentTarget.style.borderColor = '#ddd';
-                      }}
-                    >
-                      <div style={{
-                        width: '80px',
-                        height: '80px',
-                        background: '#f5f5f5',
-                        borderRadius: '4px',
-                        marginBottom: '8px'
-                      }}>
-                        {/* TODO: Render variant thumbnail */}
-                      </div>
-                      <div style={{ textAlign: 'center', fontSize: '12px' }}>
-                        <div style={{ fontWeight: 600 }}>Variant {variant.variantId}</div>
-                        {isGlobalDefault && (
-                          <div style={{ color: '#4CAF50', fontSize: '10px' }}>Global Default</div>
-                        )}
-                        {isOverride && !isGlobalDefault && (
-                          <div style={{ color: '#9C27B0', fontSize: '10px' }}>Override</div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <button
-                onClick={() => {
-                  setVariantPickerOpen(false);
-                  setVariantPickerData(null);
-                }}
-                style={{
-                  marginTop: '16px',
-                  padding: '8px 16px',
-                  background: '#e0e0e0',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 600
-                }}
-              >
-                Close
-              </button>
-            </div>
+            />
           </div>
-        )}
-      </div>
+          <span style={{
+            fontSize: '11px',
+            fontVariationSettings: "'wght' 350",
+            color: 'var(--te-gray-dark)',
+            lineHeight: 1
+          }}>−</span>
+        </div>
+      )}
     </div>
   );
 }
 
-// Separate component for variant thumbnail in hover UI
-function VariantHoverThumbnail({ box, isSelected, onClick, renderFn }) {
-  const canvasRef = useRef(null);
-  const image = useAnnotatorStore((state) => state.image);
-
-  useEffect(() => {
-    if (canvasRef.current && image) {
-      renderFn(canvasRef.current, box);
-    }
-  }, [box, image, renderFn]);
-
-  return (
-    <div
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      style={{
-        width: '32px',
-        height: '32px',
-        border: `2px solid ${isSelected ? '#2196F3' : 'white'}`,
-        borderRadius: '4px',
-        overflow: 'hidden',
-        cursor: 'pointer',
-        background: isSelected ? '#E3F2FD' : 'white',
-        transition: 'all 0.2s',
-        boxShadow: isSelected ? '0 0 0 2px rgba(33, 150, 243, 0.4)' : '0 2px 8px rgba(0,0,0,0.3)'
-      }}
-      title={`Variant ${box.variantId + 1}${isSelected ? ' (selected)' : ''}`}
-    >
-      <canvas
-        ref={canvasRef}
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'contain',
-          display: 'block'
-        }}
-      />
-    </div>
-  );
-}
